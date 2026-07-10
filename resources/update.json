@@ -1,6 +1,6 @@
 {
-  "version": "0.1.1",
-  "downloadUrl": "https://github.com/MeowYewy/PDF_Studio/releases/download/v0.1.1/PDF_Studio_0.1.1_win64_Setup.exe",
+  "version": "0.1.0",
+  "downloadUrl": "https://github.com/MeowYewy/PDF_Studio/releases/download/v0.1.0/PDF_Studio_0.1.0_win64_Setup.exe",
   "silentInstallArgs": "/VERYSILENT /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS",
-  "releaseNotes": "更新测试：PDFStudio.exe 重命名与跨机启动修复（测完将恢复）。"
+  "releaseNotes": "发布正式版本。"
 }
