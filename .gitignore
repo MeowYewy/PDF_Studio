@@ -9,6 +9,7 @@ dist/
 tools/qpdf-download.zip
 tools/qpdf-extract/
 tools/poppler-temp/
+tools/poppler-temp.zip
 
 # OS / IDE
 Thumbs.db
