@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "downloadUrl": "https://github.com/MeowYewy/PDF_Studio/releases/download/v0.1.0/PDFStudio-0.1.0-win64-Setup.exe",
+  "downloadUrl": "https://github.com/MeowYewy/PDF_Studio/releases/download/v0.1.0/PDF_Studio_0.1.0_win64_Setup.exe",
   "silentInstallArgs": "/VERYSILENT /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS",
   "releaseNotes": "发布正式版本。"
 }
