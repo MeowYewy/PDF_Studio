@@ -41,7 +41,6 @@ if exist "%PROJECT_ROOT%\tools\poppler\pdftoppm.exe" (
 
 copy /Y "%PROJECT_ROOT%\LICENSE" "%DIST_DIR%\LICENSE.txt" >nul
 copy /Y "%PROJECT_ROOT%\packaging\windows\third-party-LICENSES.txt" "%DIST_DIR%\third-party-LICENSES.txt" >nul
-copy /Y "%PROJECT_ROOT%\packaging\windows\PORTABLE-README.txt" "%DIST_DIR%\README.txt" >nul
 
 echo.
 echo Deploy OK: %DIST_DIR%

@@ -40,7 +40,6 @@ UninstallDisplayName=PDF Studio {#AppVersion}
 SetupIconFile={#AppIconFile}
 UninstallDisplayIcon={#AppIconFile}
 LicenseFile={#SourceDir}\LICENSE.txt
-InfoAfterFile={#SourceDir}\README.txt
 CloseApplications=force
 CloseApplicationsFilter=ProjectP.exe
 RestartApplications=yes
