@@ -1,12 +1,13 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import ProjectP
+import ProjectO
 
 Item {
     id: root
 
     property bool enableReorder: false
+    property bool showCategory: false
     readonly property int rowHeight: 36
     readonly property int rowSpacing: 4
     readonly property int rowStride: rowHeight + rowSpacing
@@ -78,6 +79,7 @@ Item {
             required property int index
             required property string path
             required property string name
+            required property string categoryLabel
 
             width: fileList.width
             height: root.rowHeight
@@ -117,6 +119,25 @@ Item {
                     Layout.preferredHeight: root.deleteBtnWidth
                     Layout.alignment: Qt.AlignVCenter
                     onClicked: AppController.removeFileAt(index)
+                }
+
+                Rectangle {
+                    visible: root.showCategory
+                    Layout.preferredHeight: 20
+                    Layout.preferredWidth: catLabel.implicitWidth + 10
+                    radius: 4
+                    color: Theme.accentSoft
+                    border.color: Theme.border
+                    border.width: 1
+
+                    Text {
+                        id: catLabel
+                        anchors.centerIn: parent
+                        text: categoryLabel
+                        color: Theme.accent
+                        font.pixelSize: 11
+                        font.family: Theme.uiFontFamily
+                    }
                 }
 
                 Text {

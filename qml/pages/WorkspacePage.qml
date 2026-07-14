@@ -7,13 +7,6 @@ Item {
     id: pageBase
     clip: true
 
-    property string desc: ""
-    property bool showRotate: false
-    property bool showConvertFormat: false
-    property bool showCompress: false
-    property bool showWatermark: false
-    property bool enableReorder: false
-
     ShadowCard {
         anchors.fill: parent
         radius: Theme.radiusLg
@@ -30,8 +23,8 @@ Item {
                 spacing: 24
 
                 ColumnLayout {
-                    Layout.preferredWidth: 280
-                    Layout.maximumWidth: 300
+                    Layout.preferredWidth: 300
+                    Layout.maximumWidth: 320
                     Layout.fillHeight: true
                     spacing: 12
 
@@ -43,6 +36,33 @@ Item {
 
                     FileDropZone {
                         Layout.fillWidth: true
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        Text {
+                            text: Theme.tr("sortMode")
+                            font: Theme.captionFont
+                            color: Theme.textBody
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        StyledButton {
+                            Layout.preferredWidth: 72
+                            text: Theme.tr("sortMixed")
+                            highlighted: AppController.files.sortMode === "mixed"
+                            onClicked: AppController.setSortMode("mixed")
+                        }
+
+                        StyledButton {
+                            Layout.preferredWidth: 72
+                            text: Theme.tr("sortCategory")
+                            highlighted: AppController.files.sortMode === "category"
+                            onClicked: AppController.setSortMode("category")
+                        }
                     }
 
                     Rectangle {
@@ -81,7 +101,8 @@ Item {
                             FileListView {
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
-                                enableReorder: pageBase.enableReorder
+                                enableReorder: true
+                                showCategory: true
                             }
                         }
                     }
@@ -96,10 +117,8 @@ Item {
                 ScrollPreview {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    showWatermarkOverlay: pageBase.showWatermark
-                    watermarkText: pageActionBar.watermarkText
-                    watermarkCount: pageActionBar.watermarkCount
-                    previewRotation: pageBase.showRotate ? pageActionBar.optionValue : 0
+                    showRedactionOverlay: AppController.confirmed
+                    manualEditEnabled: AppController.manualMode
                 }
             }
 
@@ -111,15 +130,9 @@ Item {
                 color: Theme.border
             }
 
-            ActionBar {
-                id: pageActionBar
+            DesensitizeActionBar {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 40
-                desc: pageBase.desc
-                showRotate: pageBase.showRotate
-                showConvertFormat: pageBase.showConvertFormat
-                showCompress: pageBase.showCompress
-                showWatermark: pageBase.showWatermark
+                Layout.preferredHeight: 44
             }
         }
     }

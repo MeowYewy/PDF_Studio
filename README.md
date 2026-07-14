@@ -1,94 +1,86 @@
-# PDF Studio for Windows
+# ProjectO — 本地医疗文档脱敏工具
 
-**简洁优雅的PDF工具**
-
-<p align="center">
-  <img src="resources/logo.svg" alt="PDF Studio" width="72" />
-</p>
+**本地处理 · 马赛克脱敏 · 手动校对**
 
 | 相关 | 内容 |
 |------|------|
 | **版本** | v0.1.0 |
 | **平台** | Windows 10 / 11，64 位 |
-| **语言** | 简体中文 · 繁體中文 · English · Français |
-| **主题** | 浅色 / 深色 |
-| **作者** | [MeowYewy](https://github.com/MeowYewy) |
+| **本地路径** | `C:\Users\liu18\Documents\TechG\ProjectO` |
+| **Qt Creator** | `C:\Qt\Tools\QtCreator\bin\qtcreator.exe` |
+| **作者** | MeowYewy |
 
 ---
 
-## 为什么选择 PDF Studio
+## 功能
 
-- **本地处理**：在电脑上完成，不上传云端，适合日常办公与隐私敏感文件
-- **功能聚焦**：只做最常用的六件事，界面干净，没有臃肿菜单
-- **实时预览**：添加文件后即可滚动预览
-- **细节到位**：拖放导入、合并拖拽排序、记住输出目录、处理进度与完成提示
+1. **左侧添加文件**：支持 `docx` / `pdf` / `png` / `jpeg`
+2. **自由排序**：混排拖拽，或按分类（PDF / 图片 / 文档）一键分组
+3. **确认识别**：右侧预览对敏感信息做不可逆马赛克/色块（姓名、身份证号等）
+4. **手动模块**：手动画框、拖动移动、四角改大小、Delete 删除系统/手动标记
+5. **导出**：将脱敏结果导出为 PDF / 图片到本地目录
 
 ---
 
-## 功能一览
+## 用 Qt Creator 打开（本地）
 
-| 功能 | 说明 |
+1. 将本仓库同步/克隆到：
+   ```
+   C:\Users\liu18\Documents\TechG\ProjectO
+   ```
+2. 启动 Qt Creator：
+   ```
+   C:\Qt\Tools\QtCreator\bin\qtcreator.exe
+   ```
+3. **文件 → 打开文件或项目** → 选择该目录下的 `CMakeLists.txt`
+4. Kit 选择 **Qt 6 + MinGW 64-bit**（与本机已装 Qt 一致）
+5. 配置并运行（或命令行：`scripts\build-release.bat` 后 `run.bat`）
+
+> CMake 默认会查找 `C:\Qt\6.11.1\mingw_64`；若版本不同，在 Qt Creator 里选对 Kit，或设置环境变量 `QT_DIR`。
+
+---
+
+## 使用流程
+
+```
+添加文件 →（可选）混排/分类排序 →「确认并识别」
+    → 右侧查看马赛克预览 →「手动标记」增删改
+    →「导出脱敏」选择输出目录
+```
+
+### 自动识别说明（v0.1）
+
+| 来源 | 能力 |
 |------|------|
-| **拆分** | 将多页 PDF 按页拆成多个单页文件 |
-| **合并** | 将多个 PDF 合并为一个；支持拖拽调整顺序 |
-| **旋转** | 将 PDF 全部页面旋转 90° / 180° / 270°，预览区实时显示效果 |
-| **转换** | 图片、文本、Office 等转为 PDF；或将 PDF 导出为 PNG / JPEG |
-| **压缩** | 三档压缩强度，减小 PDF 体积 |
-| **水印** | 为每一页添加文字水印；支持 1–5 条对角线平铺、预览与导出一致 |
-
-### 预览支持
-
-- **PDF**：多页滚动预览（poppler / Qt PDF）
-- **图片**：png、jpg、gif、webp、tiff 等
-- **Office**：docx、xlsx、pptx、odt、rtf 等文字提取预览（非排版还原）
-- **文本**：txt、md、csv、log 等
-
----
-
-**系统要求**
-
-- Windows 10 / 11，64 位
+| **PDF 文本层 / Word** | 身份证号（含校验位）、手机号、姓名/地址标签启发式 |
+| **扫描件 / 纯图片** | 自动框依赖 OCR（预留接口）；请用手动标记补全 |
+| **导出马赛克** | 真实像素块平均，不可恢复原文 |
 
 ---
 
 ## 项目结构
 
 ```
-PDF_Studio/
-├── qml/                  # QML 界面（页面、组件、主题）
-├── src/                  # C++ 引擎、预览、设置、更新检查
+ProjectO/
+├── qml/                  # 界面（工作区、预览叠层、手动编辑）
+├── src/                  # C++：文件列表、预览、PII 识别、马赛克、导出
 ├── resources/            # 图标、changelog、update 清单
-├── tools/                # qpdf、poppler（构建/打包时复制到输出目录）
-├── scripts/              # Windows 构建与发布脚本
-├── packaging/windows/    # Inno Setup、第三方许可、发布说明
-├── dist/                 # 打包输出（gitignore）
-├── APP_VERSION.txt       # 当前版本号（勿命名为 VERSION）
-└── docs/                 # 产品介绍 / 官网文案
+├── scripts/              # Windows 构建与发布
+├── packaging/windows/    # 安装包相关
+├── docs/                 # 产品说明
+└── CMakeLists.txt        # Qt Creator / CMake 工程入口
 ```
 
 ---
 
 ## 技术栈
 
-- **UI**：Qt 6.11 + QML + Qt Quick Controls 2
-- **PDF 引擎**：qpdf（CLI 封装）
-- **预览**：Qt PDF（可选）/ poppler pdftoppm
-- **Office 预览**：自研文本提取（docx / xlsx / pptx 等）
+- Qt 6 + QML + Quick Controls 2
+- PDF 预览：Qt Pdf（优先）/ poppler `pdftoppm`
+- 脱敏：本地正则 + 关键词启发式；马赛克由 `MosaicEngine` 写入像素
 
 ---
 
 ## 许可证
 
 MIT
-
----
-
-## 致谢
-
-- [qpdf](https://github.com/qpdf/qpdf) — PDF 变换
-- [poppler](https://poppler.freedesktop.org/) — PDF 渲染预览
-- [Qt](https://www.qt.io/) — 跨平台 UI 框架
-
----
-
-<p align="center"><sub>PDF Studio · MeowYewy</sub></p>

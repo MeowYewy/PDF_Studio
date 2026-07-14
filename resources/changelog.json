@@ -1,12 +1,12 @@
 [
   {
     "version": "0.1.0",
-    "date": "2026-7-10",
+    "date": "2026-7-14",
     "notes": {
-      "zh_CN": "发布正式版本。",
-      "zh_TW": "發布正式版本。",
-      "en": "Official release.",
-      "fr": "Version officielle publiée."
+      "zh_CN": "首版：文件混排/分类、自动脱敏识别、手动马赛克、导出。",
+      "zh_TW": "首版：檔案混排/分類、自動脫敏識別、手動馬賽克、匯出。",
+      "en": "Initial release: file reorder, auto PII detect, manual mosaic, export.",
+      "fr": "Version initiale : tri des fichiers, détection PII, mosaïque manuelle, export."
     }
   }
 ]

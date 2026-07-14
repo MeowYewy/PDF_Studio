@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "downloadUrl": "https://github.com/MeowYewy/PDF_Studio/releases/download/v0.1.0/PDF_Studio_0.1.0_win64_Setup.exe",
-  "silentInstallArgs": "/VERYSILENT /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS",
-  "releaseNotes": "发布正式版本。"
+  "downloadUrl": "https://github.com/MeowYewy/ProjectO/releases/download/v0.1.0/ProjectO_0.1.0_win64_portable.zip",
+  "silentInstallArgs": "",
+  "releaseNotes": "ProjectO 首版：本地脱敏预览、自动识别身份证/姓名、手动马赛克编辑与导出。"
 }

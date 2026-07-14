@@ -1,15 +1,14 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import ProjectP
+import ProjectO
 
 Item {
     id: previewPanel
     clip: true
 
-    property bool showWatermarkOverlay: false
-    property string watermarkText: ""
-    property int watermarkCount: 1
+    property bool showRedactionOverlay: false
+    property bool manualEditEnabled: false
     property int previewRotation: 0
 
     function fittedPreviewSize(slotW, slotH, aspect, rotation) {
@@ -110,7 +109,21 @@ Item {
                 color: Theme.text
             }
 
+            Text {
+                visible: AppController.confirmed
+                text: Theme.tr("regionsCount").replace("%1", AppController.regionCount)
+                color: Theme.accent
+                font: Theme.captionBoldFont
+            }
+
             Item { Layout.fillWidth: true }
+
+            StyledButton {
+                visible: AppController.manualMode && AppController.regions.selectedIndex >= 0
+                Layout.preferredWidth: 88
+                text: Theme.tr("deleteMark")
+                onClicked: AppController.regions.removeSelected()
+            }
 
             RowLayout {
                 spacing: 6
@@ -220,17 +233,6 @@ Item {
                                     transformOrigin: Item.Center
                                     clip: true
 
-                                    readonly property var pageWatermarkItems: {
-                                        const w = pageFrame.width
-                                        const h = pageFrame.height
-                                        const txt = previewPanel.watermarkText
-                                        const cnt = previewPanel.watermarkCount
-                                        const show = previewPanel.showWatermarkOverlay
-                                        if (!show || txt.trim().length === 0 || w <= 0 || h <= 0)
-                                            return []
-                                        return AppController.watermarkLayoutItems(txt, cnt, w, h)
-                                    }
-
                                     Image {
                                         id: pageImage
                                         anchors.fill: parent
@@ -241,23 +243,11 @@ Item {
                                         asynchronous: true
                                     }
 
-                                    Repeater {
-                                        model: pageFrame.pageWatermarkItems
-
-                                        Text {
-                                            required property var modelData
-                                            text: previewPanel.watermarkText
-                                            rotation: Theme.watermarkAngle
-                                            transformOrigin: Item.Center
-                                            x: modelData.x * pageFrame.width - contentWidth / 2
-                                            y: modelData.y * pageFrame.height - contentHeight / 2
-                                            font.pixelSize: Math.max(
-                                                8, pageFrame.height * Theme.watermarkFontHeightRatio)
-                                            font.family: Theme.uiFontFamily
-                                            font.weight: Font.Bold
-                                            color: "#5A5A5A"
-                                            opacity: Theme.watermarkOpacity
-                                        }
+                                    RedactionOverlay {
+                                        anchors.fill: parent
+                                        visible: previewPanel.showRedactionOverlay
+                                        pageNumber: modelData.pageNumber || (index + 1)
+                                        manualEnabled: previewPanel.manualEditEnabled
                                     }
                                 }
 
@@ -295,7 +285,7 @@ Item {
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
                         wrapMode: Text.Wrap
-                        text: Theme.tr("noFiles")
+                        text: Theme.tr("previewHint")
                         color: Theme.textBody
                         font: Theme.mainFont
                     }

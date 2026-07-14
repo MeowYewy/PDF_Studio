@@ -19,7 +19,7 @@
 namespace {
 
 constexpr auto kUpdateManifestUrl =
-    "https://raw.githubusercontent.com/MeowYewy/PDF_Studio/main/resources/update.json";
+    "https://raw.githubusercontent.com/MeowYewy/ProjectO/main/resources/update.json";
 
 constexpr auto kDefaultSilentInstallArgs =
     "/VERYSILENT /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS";
@@ -48,8 +48,8 @@ UpdateChecker::UpdateChecker(QObject *parent)
 QVariantList UpdateChecker::loadChangelog()
 {
     const QStringList candidates = {
-        QStringLiteral(":/ProjectP/resources/changelog.json"),
-        QCoreApplication::applicationDirPath() + QStringLiteral("/ProjectP/resources/changelog.json"),
+        QStringLiteral(":/ProjectO/resources/changelog.json"),
+        QCoreApplication::applicationDirPath() + QStringLiteral("/ProjectO/resources/changelog.json"),
         QCoreApplication::applicationDirPath() + QStringLiteral("/resources/changelog.json"),
     };
 
@@ -154,7 +154,7 @@ void UpdateChecker::checkForUpdates()
     setStatus(Checking);
 
     QNetworkRequest request{QUrl(QString::fromUtf8(kUpdateManifestUrl))};
-    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("ProjectP-Updater"));
+    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("ProjectO-Updater"));
     m_activeReply = m_network->get(request);
 
     connect(m_activeReply, &QNetworkReply::finished, this, [this]() {
@@ -258,7 +258,7 @@ void UpdateChecker::downloadUpdate()
         const QUrl url(m_downloadUrl);
         QString fileName = QFileInfo(url.path()).fileName();
         if (fileName.isEmpty())
-            fileName = QStringLiteral("ProjectP-update.exe");
+            fileName = QStringLiteral("ProjectO-update.exe");
 
         const QString destPath = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
                                      .filePath(fileName);

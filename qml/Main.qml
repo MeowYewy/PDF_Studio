@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import ProjectP
+import ProjectO
 
 ApplicationWindow {
     id: root
@@ -12,8 +12,6 @@ ApplicationWindow {
     visible: true
     title: Theme.tr("appName")
     color: Theme.bg
-
-    property int activeTab: 0
 
     palette: Palette {
         window: Theme.bg
@@ -51,31 +49,8 @@ ApplicationWindow {
             Layout.fillHeight: true
             Layout.margins: 32
 
-            ColumnLayout {
+            WorkspacePage {
                 anchors.fill: parent
-                spacing: 20
-
-                FeatureTabs {
-                    Layout.alignment: Qt.AlignHCenter
-                    currentIndex: root.activeTab
-                    onTabChanged: function(index) {
-                        root.activeTab = index
-                        AppController.currentTab = index
-                    }
-                }
-
-                StackLayout {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    currentIndex: root.activeTab
-
-                    SplitPage { Layout.fillWidth: true; Layout.fillHeight: true }
-                    MergePage { Layout.fillWidth: true; Layout.fillHeight: true }
-                    RotatePage { Layout.fillWidth: true; Layout.fillHeight: true }
-                    ConvertPage { Layout.fillWidth: true; Layout.fillHeight: true }
-                    CompressPage { Layout.fillWidth: true; Layout.fillHeight: true }
-                    WatermarkPage { Layout.fillWidth: true; Layout.fillHeight: true }
-                }
             }
         }
     }

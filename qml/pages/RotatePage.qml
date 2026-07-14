@@ -1,5 +1,5 @@
 import QtQuick
-import ProjectP
+import ProjectO
 
 PageBase {
     desc: Theme.tr("rotateDesc")

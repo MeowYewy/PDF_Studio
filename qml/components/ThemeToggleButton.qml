@@ -1,5 +1,5 @@
 import QtQuick
-import ProjectP
+import ProjectO
 
 Rectangle {
     id: btn

@@ -16,12 +16,12 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
     app.setOrganizationName("TechG");
     app.setOrganizationDomain("techg.local");
-    app.setApplicationName("ProjectP");
+    app.setApplicationName("ProjectO");
     app.setApplicationVersion(QStringLiteral("0.1.0"));
 
-    QIcon appIcon(QStringLiteral(":/ProjectP/resources/app-icon.png"));
+    QIcon appIcon(QStringLiteral(":/ProjectO/resources/app-icon.png"));
     if (appIcon.isNull())
-        appIcon = QIcon(QStringLiteral(":/ProjectP/resources/logo.svg"));
+        appIcon = QIcon(QStringLiteral(":/ProjectO/resources/logo.svg"));
     app.setWindowIcon(appIcon);
 
     QQuickStyle::setStyle("Basic");
@@ -42,7 +42,7 @@ int main(int argc, char *argv[])
         &app, []() { QCoreApplication::exit(-1); },
         Qt::QueuedConnection);
 
-    engine.loadFromModule("ProjectP", "Main");
+    engine.loadFromModule("ProjectO", "Main");
 
     const auto roots = engine.rootObjects();
     if (!roots.isEmpty()) {

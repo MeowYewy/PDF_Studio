@@ -1,25 +1,9 @@
-PDF Studio — Third-Party Components
-===================================
+ProjectO — Third-Party Components
+=================================
 
-This application bundles the following third-party software.
+This distribution may include:
 
-qpdf 12.3.2
------------
-License: Apache License 2.0
-Homepage: https://github.com/qpdf/qpdf
-Used for: PDF merge, split, rotate, compress, watermark
+- Qt 6 (LGPL / commercial) — https://www.qt.io/
+- poppler pdftoppm (GPL-2.0 / GPL-3.0) — optional PDF rasterizer
 
-Poppler (pdftoppm) 24.08.0
---------------------------
-License: GPL-2.0-or-later (see Poppler COPYING)
-Homepage: https://poppler.freedesktop.org/
-Used for: PDF page preview rendering (fallback when Qt Pdf is unavailable)
-
-Qt 6.11.1
----------
-License: LGPL v3 / Commercial (Qt Company)
-Homepage: https://www.qt.io/
-Used for: Application UI and PDF generation (QPdfWriter)
-
-When distributing PDF Studio, ensure compliance with the licenses above.
-Runtime Qt libraries are deployed via windeployqt (LGPL).
+When distributing ProjectO, ensure compliance with the licenses above.

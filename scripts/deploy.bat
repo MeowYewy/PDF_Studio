@@ -10,39 +10,35 @@ if not exist "%BUILD_EXE%" (
 )
 
 echo.
-echo === Deploy PDF Studio v%APP_VERSION% ===
+echo === Deploy ProjectO v%APP_VERSION% ===
 echo Staging: %DIST_DIR%
 echo.
 
 if exist "%DIST_DIR%" rmdir /s /q "%DIST_DIR%"
 mkdir "%DIST_DIR%"
 
-copy /Y "%BUILD_EXE%" "%DIST_DIR%\ProjectP.exe" >nul
+copy /Y "%BUILD_EXE%" "%DIST_DIR%\ProjectO.exe" >nul
 
 pushd "%DIST_DIR%"
-windeployqt --release --qmldir "%PROJECT_ROOT%\qml" --no-translations ProjectP.exe
+windeployqt --release --qmldir "%PROJECT_ROOT%\qml" --no-translations ProjectO.exe
 if errorlevel 1 (
     popd
     exit /b 1
 )
 popd
 
-if exist "%PROJECT_ROOT%\tools\qpdf\qpdf.exe" (
-    xcopy /E /I /Y /Q "%PROJECT_ROOT%\tools\qpdf" "%DIST_DIR%\tools\qpdf" >nul
-) else (
-    echo WARNING: tools\qpdf not found — merge/split/rotate may fail.
-)
-
 if exist "%PROJECT_ROOT%\tools\poppler\pdftoppm.exe" (
     xcopy /E /I /Y /Q "%PROJECT_ROOT%\tools\poppler" "%DIST_DIR%\tools\poppler" >nul
 ) else (
-    echo NOTE: tools\poppler not found — install Qt Pdf or run setup-poppler.bat.
+    echo NOTE: tools\poppler not found — install Qt Pdf module or run setup-poppler.bat.
 )
 
 copy /Y "%PROJECT_ROOT%\LICENSE" "%DIST_DIR%\LICENSE.txt" >nul
-copy /Y "%PROJECT_ROOT%\packaging\windows\third-party-LICENSES.txt" "%DIST_DIR%\third-party-LICENSES.txt" >nul
+if exist "%PROJECT_ROOT%\packaging\windows\third-party-LICENSES.txt" (
+    copy /Y "%PROJECT_ROOT%\packaging\windows\third-party-LICENSES.txt" "%DIST_DIR%\third-party-LICENSES.txt" >nul
+)
 
 echo.
 echo Deploy OK: %DIST_DIR%
-echo Run: "%DIST_DIR%\ProjectP.exe"
+echo Run: "%DIST_DIR%\ProjectO.exe"
 endlocal

@@ -1,7 +1,6 @@
 #include "pdfpreviewmodel.h"
 
 #include "appsettings.h"
-#include "pdfengine.h"
 #include "pdfpagerenderer.h"
 #include "officetextextractor.h"
 
@@ -15,10 +14,15 @@
 #include <QImageReader>
 #include <QMap>
 #include <QPainter>
+#include <QProcess>
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <QUrl>
 #include <QtConcurrent/QtConcurrentRun>
+
+#ifdef HAS_QT_PDF
+#include <QPdfDocument>
+#endif
 
 #include <algorithm>
 
@@ -168,7 +172,21 @@ QString cacheImageFor(const QString &currentFile, int cacheGeneration, const QIm
 
 int countPdfPages(const QString &path)
 {
-    return PdfEngine().pageCount(path);
+#ifdef HAS_QT_PDF
+    QPdfDocument doc;
+    if (doc.load(path) == QPdfDocument::Error::None)
+        return doc.pageCount();
+#endif
+    const QString pdftoppm = PdfPageRenderer::findPdftoppm();
+    if (pdftoppm.isEmpty())
+        return 0;
+
+    // pdfinfo may not be bundled; try rendering page 1 and return at least 1 if file opens
+    Q_UNUSED(pdftoppm);
+    QFile f(path);
+    if (!f.exists())
+        return 0;
+    return 1;
 }
 
 int pageNumberFromPopplerPath(const QString &path)

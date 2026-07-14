@@ -4,14 +4,14 @@ cd /d "%~dp0.."
 call "%~dp0env.bat"
 if errorlevel 1 exit /b 1
 
-if not exist "%DIST_DIR%\ProjectP.exe" (
+if not exist "%DIST_DIR%\ProjectO.exe" (
     echo ERROR: %DIST_DIR% not found. Run scripts\deploy.bat first.
     exit /b 1
 )
 
 if not exist "%ARTIFACT_DIR%" mkdir "%ARTIFACT_DIR%"
 
-set "ZIP_NAME=PDF_Studio_%APP_VERSION%_win64_portable.zip"
+set "ZIP_NAME=ProjectO_%APP_VERSION%_win64_portable.zip"
 set "ZIP_PATH=%ARTIFACT_DIR%\%ZIP_NAME%"
 
 if exist "%ZIP_PATH%" del /f /q "%ZIP_PATH%"
