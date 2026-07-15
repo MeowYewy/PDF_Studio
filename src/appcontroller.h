@@ -6,8 +6,10 @@
 #include "filelistmodel.h"
 #include "pdfengine.h"
 #include "pdfpreviewmodel.h"
+#include "filepicker.h"
 
 class PreviewImageProvider;
+class FilePicker;
 
 class AppController : public QObject
 {
@@ -28,6 +30,7 @@ class AppController : public QObject
 public:
     explicit AppController(PreviewImageProvider *imageProvider = nullptr,
                            AppSettings *settings = nullptr,
+                           FilePicker *filePicker = nullptr,
                            QObject *parent = nullptr);
 
     FileListModel *files() { return &m_files; }
@@ -77,11 +80,15 @@ private:
     void notifyPreviewChanged();
     QString defaultDialogDir() const;
     void rememberOutput(const QString &path);
+    QStringList pickPathsSync(const QString &mode,
+                              const QString &suggested = {},
+                              const QString &filter = {});
 
     FileListModel m_files;
     PdfPreviewModel m_preview;
     PdfEngine m_engine;
     AppSettings *m_settings = nullptr;
+    FilePicker *m_filePicker = nullptr;
     QString m_status;
     bool m_busy = false;
     double m_progress = 0.0;

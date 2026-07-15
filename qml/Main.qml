@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import ProjectP
+import PageCase
 
 ApplicationWindow {
     id: root
@@ -115,6 +115,78 @@ ApplicationWindow {
         id: settingsDropdown
         parent: root.contentItem
         onAboutRequested: aboutDialog.open()
+        onInstallRequested: installConfirmPopup.open()
+    }
+
+    Popup {
+        id: installConfirmPopup
+        parent: Overlay.overlay
+        modal: true
+        dim: true
+        padding: 20
+        width: 360
+        anchors.centerIn: parent
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        transformOrigin: Item.Center
+        opacity: 1
+        scale: 1
+
+        enter: Transition {
+            ParallelAnimation {
+                NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.animNormal; easing.type: Easing.OutCubic }
+                NumberAnimation { property: "scale"; from: 0.94; to: 1; duration: Theme.animSlow; easing.type: Easing.OutBack; easing.overshoot: 1.08 }
+            }
+        }
+        exit: Transition {
+            ParallelAnimation {
+                NumberAnimation { property: "opacity"; to: 0; duration: Theme.animFast; easing.type: Easing.InCubic }
+                NumberAnimation { property: "scale"; to: 0.96; duration: Theme.animFast; easing.type: Easing.InCubic }
+            }
+        }
+
+        background: Rectangle {
+            radius: Theme.radiusMd
+            color: Theme.surface
+            border.color: Theme.border
+            border.width: 1
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 14
+
+            Text {
+                Layout.fillWidth: true
+                text: Theme.tr("installConfirmTitle")
+                font: Theme.mainFontBold
+                color: Theme.text
+            }
+
+            Text {
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                text: Theme.tr("installConfirmMessage")
+                font: Theme.mainFont
+                color: Theme.textBody
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                Item { Layout.fillWidth: true }
+                StyledButton {
+                    text: Theme.tr("pickerCancel")
+                    onClicked: installConfirmPopup.close()
+                }
+                StyledButton {
+                    text: Theme.tr("installUpdate")
+                    highlighted: true
+                    onClicked: {
+                        installConfirmPopup.close()
+                        UpdateChecker.installUpdate()
+                    }
+                }
+            }
+        }
     }
 
     AboutDialog {
@@ -131,5 +203,15 @@ ApplicationWindow {
         id: changelogDialog
         parent: Overlay.overlay
         anchors.fill: parent
+    }
+
+    FilePickerDialog {
+        parent: Overlay.overlay
+        anchors.fill: parent
+    }
+
+    Component.onCompleted: {
+        // Quiet background check; auto-downloads when a newer version exists.
+        Qt.callLater(function() { UpdateChecker.checkForUpdates() })
     }
 }

@@ -4,7 +4,7 @@ cd /d "%~dp0.."
 call "%~dp0env.bat"
 if errorlevel 1 exit /b 1
 
-if not exist "%DIST_DIR%\ProjectP.exe" (
+if not exist "%DIST_DIR%\PageCase.exe" (
     echo ERROR: %DIST_DIR% not found. Run scripts\deploy.bat first.
     exit /b 1
 )
@@ -28,7 +28,7 @@ if not defined ISCC (
 if not defined ISCC (
     echo ERROR: Inno Setup 6 not found.
     echo Download: https://jrsoftware.org/isdl.php
-    echo Then run this script again, or open packaging\windows\PDFStudio.iss manually.
+    echo Then run this script again, or open packaging\windows\PageCase.iss manually.
     exit /b 1
 )
 
@@ -38,9 +38,9 @@ echo.
 echo === Build installer with Inno Setup ===
 echo.
 
-"%ISCC%" /DAppVersion=%APP_VERSION% /DSourceDir="%DIST_DIR%" /DOutputDir="%ARTIFACT_DIR%" "%PROJECT_ROOT%\packaging\windows\PDFStudio.iss"
+"%ISCC%" /DAppVersion=%APP_VERSION% /DSourceDir="%DIST_DIR%" /DOutputDir="%ARTIFACT_DIR%" "%PROJECT_ROOT%\packaging\windows\PageCase.iss"
 if errorlevel 1 exit /b 1
 
 echo.
-echo Installer OK: %ARTIFACT_DIR%\PDF_Studio_%APP_VERSION%_win64_Setup.exe
+echo Installer OK: %ARTIFACT_DIR%\PageCase_%APP_VERSION%_win64_Setup.exe
 endlocal

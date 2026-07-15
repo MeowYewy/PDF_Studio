@@ -1,16 +1,30 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import ProjectP
+import PageCase
 
 Item {
     id: root
-    visible: false
     z: 3000
 
-    function open() { root.visible = true; root.forceActiveFocus() }
-    function close() { root.visible = false }
+    property bool shown: false
+    property real overlayOpacity: 0
+    visible: shown || overlayOpacity > 0.001
+
+    function open() {
+        root.shown = true
+        root.overlayOpacity = Theme.dimOpacity
+        root.forceActiveFocus()
+    }
+    function close() {
+        root.shown = false
+        root.overlayOpacity = 0
+    }
     signal changelogRequested()
+
+    Behavior on overlayOpacity {
+        NumberAnimation { duration: Theme.animNormal; easing.type: Easing.OutCubic }
+    }
 
     Keys.onEscapePressed: root.close()
     Keys.onReleased: function(event) {
@@ -21,7 +35,7 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: Theme.dimOverlay
-        opacity: Theme.dimOpacity
+        opacity: root.overlayOpacity
 
         MouseArea {
             anchors.fill: parent
@@ -34,6 +48,20 @@ Item {
         anchors.centerIn: parent
         width: card.width
         height: card.height
+        scale: root.shown ? 1 : 0.92
+        opacity: root.shown ? 1 : 0
+        transformOrigin: Item.Center
+
+        Behavior on scale {
+            NumberAnimation {
+                duration: Theme.animSlow
+                easing.type: Easing.OutBack
+                easing.overshoot: 1.08
+            }
+        }
+        Behavior on opacity {
+            NumberAnimation { duration: Theme.animNormal; easing.type: Easing.OutCubic }
+        }
 
         Rectangle {
             id: shadow2
@@ -84,7 +112,7 @@ Item {
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: Theme.tr("appName")
-                    font: Theme.titleFont
+                    font: Theme.brandTitleFont
                     color: Theme.text
                 }
 

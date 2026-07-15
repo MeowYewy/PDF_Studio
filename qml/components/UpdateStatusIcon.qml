@@ -1,5 +1,5 @@
 import QtQuick
-import ProjectP
+import PageCase
 
 Item {
     id: icon
@@ -9,9 +9,10 @@ Item {
     property int status: UpdateChecker.status
     property color tone: Theme.accent
 
-    readonly property bool showSpinner: status === 1 || status === 5
+    // 1 Checking · 2 UpToDate · 4 CheckFailed · 5 Downloading · 6 DownloadFailed
+    readonly property bool showSpinner: status === 1
     readonly property bool showSuccess: status === 2
-    readonly property bool showFailure: status === 4
+    readonly property bool showFailure: status === 4 || status === 6
 
     visible: showSpinner || showSuccess || showFailure
 
@@ -64,6 +65,7 @@ Item {
             ctx.lineTo(13.8, 5.8)
             ctx.stroke()
         }
+        onVisibleChanged: if (visible) requestPaint()
     }
 
     Canvas {
@@ -87,5 +89,6 @@ Item {
             ctx.lineTo(6.2, 11.8)
             ctx.stroke()
         }
+        onVisibleChanged: if (visible) requestPaint()
     }
 }

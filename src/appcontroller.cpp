@@ -13,7 +13,7 @@
 
 #include <QCoreApplication>
 
-#include <QFileDialog>
+#include "filepicker.h"
 
 #include <QFileInfo>
 
@@ -23,11 +23,13 @@
 
 
 
-AppController::AppController(PreviewImageProvider *imageProvider, AppSettings *settings, QObject *parent)
+AppController::AppController(PreviewImageProvider *imageProvider, AppSettings *settings,
+                             FilePicker *filePicker, QObject *parent)
 
     : QObject(parent)
 
     , m_settings(settings)
+    , m_filePicker(filePicker)
 
 {
 
@@ -209,26 +211,28 @@ void AppController::addFiles(const QStringList &paths)
 
 
 
-void AppController::browseAndAddFiles()
-
+QStringList AppController::pickPathsSync(const QString &mode,
+                                         const QString &suggested,
+                                         const QString &filter)
 {
+    if (!m_filePicker)
+        return {};
+    if (!m_filePicker->openSync(mode, defaultDialogDir(), suggested, filter))
+        return {};
+    return m_filePicker->resultPaths();
+}
 
-    const QStringList selected = QFileDialog::getOpenFileNames(
+void AppController::browseAndAddFiles()
+{
+    const QStringList selected = pickPathsSync(QStringLiteral("openMulti"));
+    if (selected.isEmpty())
+        return;
 
-        nullptr,
-
-        QStringLiteral("Select Files"),
-
-        defaultDialogDir(),
-
-        QStringLiteral("All Files (*.*);;PDF Files (*.pdf);;Office (*.docx *.xlsx *.pptx *.ppsx *.odt *.rtf);;Images (*.png *.jpg *.jpeg *.bmp *.gif *.webp *.tif *.tiff *.ico);;Text (*.txt *.md *.csv *.log)"));
-
-
-
-    if (!selected.isEmpty())
-
-        addFiles(selected);
-
+    if (m_settings) {
+        for (const QString &path : selected)
+            m_settings->rememberRecentFile(path);
+    }
+    addFiles(selected);
 }
 
 
@@ -315,37 +319,15 @@ QString AppController::defaultDialogDir() const
 
 
 QString AppController::browseOutputFile(const QString &suggested, const QString &filter)
-
 {
-
-    const QString dir = defaultDialogDir();
-
-    const QString fileFilter = filter.isEmpty()
-
-        ? QStringLiteral("PDF Files (*.pdf)")
-
-        : filter;
-
-    return QFileDialog::getSaveFileName(
-
-        nullptr, QStringLiteral("Save File"),
-
-        dir + QLatin1Char('/') + suggested,
-
-        fileFilter);
-
+    const QStringList paths = pickPathsSync(QStringLiteral("save"), suggested, filter);
+    return paths.isEmpty() ? QString() : paths.first();
 }
 
-
-
 QString AppController::browseOutputDir()
-
 {
-
-    return QFileDialog::getExistingDirectory(
-
-        nullptr, QStringLiteral("Select Folder"), defaultDialogDir());
-
+    const QStringList paths = pickPathsSync(QStringLiteral("folder"));
+    return paths.isEmpty() ? QString() : paths.first();
 }
 
 

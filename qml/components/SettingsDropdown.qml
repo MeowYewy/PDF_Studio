@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import ProjectP
+import PageCase
 
 Item {
     id: dropdown
@@ -179,6 +179,7 @@ Item {
                         visible: UpdateChecker.status === 1
                                 || UpdateChecker.status === 2
                                 || UpdateChecker.status === 4
+                                || UpdateChecker.status === 6
                     }
 
                     Text {
@@ -195,21 +196,21 @@ Item {
                     }
 
                     Rectangle {
-                        id: newVersionPill
+                        id: installPill
                         z: 2
                         anchors.left: updateLabel.right
                         anchors.leftMargin: 8
                         anchors.verticalCenter: parent.verticalCenter
                         height: 20
-                        width: newVersionText.implicitWidth + 12
+                        width: installPillText.implicitWidth + 12
                         radius: 10
                         color: Theme.accent
-                        visible: UpdateChecker.hasUpdate && UpdateChecker.status !== 5
+                        visible: UpdateChecker.status === 7
 
                         Text {
-                            id: newVersionText
+                            id: installPillText
                             anchors.centerIn: parent
-                            text: Theme.tr("newVersion")
+                            text: Theme.tr("installUpdate")
                             color: "#FFFFFF"
                             font.pixelSize: 11
                             font.weight: Font.Normal
@@ -221,7 +222,8 @@ Item {
                             cursorShape: Qt.PointingHandCursor
                             onClicked: function(mouse) {
                                 mouse.accepted = true
-                                UpdateChecker.downloadUpdate()
+                                dropdown.close()
+                                dropdown.installRequested()
                             }
                         }
                     }
@@ -231,7 +233,7 @@ Item {
                         anchors.left: parent.left
                         anchors.top: parent.top
                         anchors.bottom: parent.bottom
-                        width: newVersionPill.visible ? newVersionPill.x : parent.width
+                        width: installPill.visible ? installPill.x : parent.width
                         cursorShape: Qt.PointingHandCursor
                         hoverEnabled: true
                         onClicked: UpdateChecker.checkForUpdates()
@@ -252,4 +254,5 @@ Item {
     }
 
     signal aboutRequested()
+    signal installRequested()
 }

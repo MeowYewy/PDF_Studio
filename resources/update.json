@@ -1,6 +1,6 @@
 {
-  "version": "0.1.0",
-  "downloadUrl": "https://github.com/MeowYewy/PDF_Studio/releases/download/v0.1.0/PDF_Studio_0.1.0_win64_Setup.exe",
-  "silentInstallArgs": "/VERYSILENT /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS",
-  "releaseNotes": "发布正式版本。"
+  "version": "0.2.0",
+  "downloadUrl": "https://github.com/MeowYewy/PageCase/releases/download/v0.2.0/PageCase_0.2.0_win64_Setup.exe",
+  "silentInstallArgs": "/SILENT /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS",
+  "releaseNotes": "新增风格化文件选择器；优化了更新逻辑。"
 }

@@ -1,9 +1,12 @@
 import QtQuick
 import QtQuick.Controls
-import ProjectP
+import PageCase
 
 ComboBox {
     id: control
+
+    property Item popupParent: null
+    property bool popupOpensUpward: false
 
     implicitHeight: 36
     implicitWidth: 100
@@ -43,9 +46,14 @@ ComboBox {
         height: 34
         required property var modelData
         required property int index
-        text: control.textRole ? (Array.isArray(control.model) && control.model[index] && control.model[index][control.textRole] !== undefined
-              ? String(control.model[index][control.textRole])
-              : String(modelData)) : String(modelData)
+        text: {
+            if (control.textRole && control.model && control.model[index] !== undefined) {
+                const item = control.model[index]
+                if (item && typeof item === "object" && item[control.textRole] !== undefined)
+                    return String(item[control.textRole])
+            }
+            return String(modelData)
+        }
         palette.text: del.highlighted ? "#FFFFFF" : Theme.text
         palette.highlight: Theme.accent
         palette.highlightedText: "#FFFFFF"
@@ -58,11 +66,31 @@ ComboBox {
     }
 
     popup: Popup {
-        y: control.height + 4
+        parent: control.popupParent
+        z: control.popupParent ? 100 : 0
+        x: control.popupParent
+           ? control.mapToItem(control.popupParent, 0, 0).x
+           : 0
+        y: control.popupParent
+           ? (control.popupOpensUpward
+              ? control.mapToItem(control.popupParent, 0, 0).y - height - 4
+              : control.mapToItem(control.popupParent, 0, 0).y + control.height + 4)
+           : control.height + 4
         width: Math.max(control.width, 100)
         padding: 6
-        modal: false
+        modal: control.popupParent !== null
         dim: false
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+        onOpened: {
+            if (!control.popupParent)
+                return
+            x = control.mapToItem(control.popupParent, 0, 0).x
+            if (control.popupOpensUpward)
+                y = control.mapToItem(control.popupParent, 0, 0).y - height - 4
+            else
+                y = control.mapToItem(control.popupParent, 0, 0).y + control.height + 4
+        }
 
         background: Rectangle {
             radius: Theme.radiusSm

@@ -1,6 +1,6 @@
 import QtQuick
 import QtQuick.Controls
-import ProjectP
+import PageCase
 
 CompactComboBox {
     id: control

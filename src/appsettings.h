@@ -25,7 +25,7 @@ public:
     bool isDark() const { return m_theme == QLatin1String("dark"); }
     int languageRevision() const { return m_languageRevision; }
     int themeRevision() const { return m_themeRevision; }
-    QString appVersion() const { return QStringLiteral("0.1.0"); }
+    QString appVersion() const { return QStringLiteral("0.2.0"); }
     QString lastOutputDir() const;
     QStringList watermarkHistory() const { return m_watermarkHistory; }
     int watermarkHistoryRevision() const { return m_watermarkHistoryRevision; }
@@ -35,6 +35,8 @@ public:
     Q_INVOKABLE QString trKey(const QString &key) const;
     Q_INVOKABLE void setLastOutputDir(const QString &dir);
     Q_INVOKABLE void rememberOutputPath(const QString &fileOrDir);
+    Q_INVOKABLE QStringList recentFiles() const;
+    Q_INVOKABLE void rememberRecentFile(const QString &filePath);
     Q_INVOKABLE void addWatermarkHistory(const QString &text);
     Q_INVOKABLE void removeWatermarkHistoryAt(int index);
 

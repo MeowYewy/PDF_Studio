@@ -1,5 +1,5 @@
 import QtQuick
-import ProjectP
+import PageCase
 
 PageBase {
     desc: Theme.tr("mergeDesc")

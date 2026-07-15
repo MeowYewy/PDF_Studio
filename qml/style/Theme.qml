@@ -72,6 +72,8 @@ QtObject {
     readonly property font mainFont: Qt.font({ family: uiFontFamily, pixelSize: 15 })
     readonly property font mainFontBold: Qt.font({ family: uiFontFamily, pixelSize: 15, weight: Font.DemiBold })
     readonly property font titleFont: Qt.font({ family: uiFontFamily, pixelSize: 22, weight: Font.DemiBold })
+    // Brand name always matches zh_CN/zh_TW (YaHei DemiBold); do not follow Latin UI font on en/fr
+    readonly property font brandTitleFont: Qt.font({ family: cjkFontFamily, pixelSize: 22, weight: Font.DemiBold })
     readonly property font tabFont: Qt.font({ family: uiFontFamily, pixelSize: 14, weight: Font.Medium })
     readonly property font captionFont: Qt.font({ family: uiFontFamily, pixelSize: 13 })
     readonly property font captionBoldFont: Qt.font({ family: uiFontFamily, pixelSize: 13, weight: Font.DemiBold })

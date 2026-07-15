@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import ProjectP
+import PageCase
 
 Rectangle {
     id: header
@@ -31,7 +31,7 @@ Rectangle {
 
         Text {
             text: Theme.tr("appName")
-            font: Theme.titleFont
+            font: Theme.brandTitleFont
             color: Theme.text
         }
 
@@ -39,14 +39,22 @@ Rectangle {
 
         ToolButton {
             id: menuBtn
-            text: "☰"
-            font.pixelSize: 18
             implicitWidth: 36
             implicitHeight: 36
-            palette.buttonText: Theme.text
+            hoverEnabled: true
+            focusPolicy: Qt.NoFocus
             background: Rectangle {
                 radius: Theme.radiusSm
                 color: menuBtn.hovered ? Theme.menuHover : "transparent"
+            }
+            contentItem: Item {
+                LucideIcon {
+                    anchors.centerIn: parent
+                    width: 18
+                    height: 18
+                    icon: "menu"
+                    color: Theme.text
+                }
             }
             onClicked: header.menuRequested(menuBtn)
         }

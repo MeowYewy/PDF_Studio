@@ -1,13 +1,20 @@
 import QtQuick
 import QtQuick.Controls
-import ProjectP
+import PageCase
 
 Item {
     id: root
-    visible: false
     z: 3100
 
+    property bool shown: false
+    property real overlayOpacity: 0
+    visible: shown || overlayOpacity > 0.001
+
     ListModel { id: changelogModel }
+
+    Behavior on overlayOpacity {
+        NumberAnimation { duration: Theme.animNormal; easing.type: Easing.OutCubic }
+    }
 
     function localizedNotes(item) {
         const lang = AppSettings.language
@@ -48,18 +55,22 @@ Item {
 
     function open() {
         refillChangelog()
-        root.visible = true
+        root.shown = true
+        root.overlayOpacity = Theme.dimOpacity
         root.forceActiveFocus()
     }
 
-    function close() { root.visible = false }
+    function close() {
+        root.shown = false
+        root.overlayOpacity = 0
+    }
 
     Keys.onEscapePressed: root.close()
 
     Rectangle {
         anchors.fill: parent
         color: Theme.dimOverlay
-        opacity: Theme.dimOpacity
+        opacity: root.overlayOpacity
         MouseArea {
             anchors.fill: parent
             onClicked: root.close()
@@ -70,6 +81,20 @@ Item {
         anchors.centerIn: parent
         width: card.width
         height: card.height
+        scale: root.shown ? 1 : 0.92
+        opacity: root.shown ? 1 : 0
+        transformOrigin: Item.Center
+
+        Behavior on scale {
+            NumberAnimation {
+                duration: Theme.animSlow
+                easing.type: Easing.OutBack
+                easing.overshoot: 1.08
+            }
+        }
+        Behavior on opacity {
+            NumberAnimation { duration: Theme.animNormal; easing.type: Easing.OutCubic }
+        }
 
         Rectangle {
             anchors.fill: card

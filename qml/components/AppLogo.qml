@@ -14,7 +14,7 @@ Item {
     Image {
         id: logoImage
         anchors.fill: parent
-        source: "qrc:/ProjectP/resources/logo.svg"
+        source: "qrc:/qt/qml/PageCase/resources/logo.svg"
         sourceSize: Qt.size(root.logoSize * 2, root.logoSize * 2)
         fillMode: Image.PreserveAspectFit
         smooth: true
@@ -22,7 +22,7 @@ Item {
 
         onStatusChanged: {
             if (status === Image.Error)
-                logoImage.source = "qrc:/ProjectP/resources/app-icon.png"
+                logoImage.source = "qrc:/qt/qml/PageCase/resources/app-icon.png"
         }
     }
 }

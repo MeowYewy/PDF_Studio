@@ -1,5 +1,5 @@
 import QtQuick
-import ProjectP
+import PageCase
 
 Rectangle {
     id: btn

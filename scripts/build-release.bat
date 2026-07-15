@@ -5,7 +5,7 @@ call "%~dp0env.bat"
 if errorlevel 1 exit /b 1
 
 echo.
-echo === PDF Studio Release Build (v%APP_VERSION%) ===
+echo === PageCase Release Build (v%APP_VERSION%) ===
 echo Qt: %QT_DIR%
 echo Output: %BUILD_EXE%
 echo.

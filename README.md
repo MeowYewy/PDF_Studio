@@ -1,9 +1,9 @@
-# PDF Studio for Windows
+# PageCase for Windows
 
 **简洁优雅的PDF工具**
 
 <p align="center">
-  <img src="resources/logo.svg" alt="PDF Studio" width="72" />
+  <img src="resources/logo.svg" alt="PageCase" width="72" />
 </p>
 
 | 相关 | 内容 |
@@ -16,7 +16,7 @@
 
 ---
 
-## 为什么选择 PDF Studio
+## 为什么选择 PageCase
 
 - **本地处理**：在电脑上完成，不上传云端，适合日常办公与隐私敏感文件
 - **功能聚焦**：只做最常用的六件事，界面干净，没有臃肿菜单
@@ -54,7 +54,7 @@
 ## 项目结构
 
 ```
-PDF_Studio/
+PageCase/
 ├── qml/                  # QML 界面（页面、组件、主题）
 ├── src/                  # C++ 引擎、预览、设置、更新检查
 ├── resources/            # 图标、changelog、update 清单
@@ -91,4 +91,4 @@ MIT
 
 ---
 
-<p align="center"><sub>PDF Studio · MeowYewy</sub></p>
+<p align="center"><sub>PageCase · MeowYewy</sub></p>

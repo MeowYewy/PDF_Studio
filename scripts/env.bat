@@ -72,10 +72,10 @@ if not exist "%QT_DIR%\bin\windeployqt.exe" (
 set "PATH=%QT_DIR%\bin;%MINGW_DIR%\bin;%CMAKE_DIR%;%PATH%"
 
 set "BUILD_DIR=%PROJECT_ROOT%\build\release"
-set "BUILD_EXE=%BUILD_DIR%\ProjectP.exe"
+set "BUILD_EXE=%BUILD_DIR%\PageCase.exe"
 set "DIST_ROOT=%PROJECT_ROOT%\dist"
-rem Artifact naming (underscore): PDF_Studio_{version}_win64_Setup.exe / _portable.zip
-set "DIST_DIR=%DIST_ROOT%\PDF_Studio_%APP_VERSION%_win64"
+rem Artifact naming (underscore): PageCase_{version}_win64_Setup.exe / _portable.zip
+set "DIST_DIR=%DIST_ROOT%\PageCase_%APP_VERSION%_win64"
 set "ARTIFACT_DIR=%DIST_ROOT%\artifacts"
 
 endlocal & (

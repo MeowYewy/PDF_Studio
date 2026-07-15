@@ -1,4 +1,4 @@
-PDF Studio — Third-Party Components
+PageCase — Third-Party Components
 ===================================
 
 This application bundles the following third-party software.
@@ -21,5 +21,5 @@ License: LGPL v3 / Commercial (Qt Company)
 Homepage: https://www.qt.io/
 Used for: Application UI and PDF generation (QPdfWriter)
 
-When distributing PDF Studio, ensure compliance with the licenses above.
+When distributing PageCase, ensure compliance with the licenses above.
 Runtime Qt libraries are deployed via windeployqt (LGPL).
