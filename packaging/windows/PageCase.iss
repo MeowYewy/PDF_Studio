@@ -1,6 +1,5 @@
 ; PageCase — Windows installer (Inno Setup 6)
 ; Build: scripts\package-installer.bat
-; Or: ISCC /DAppVersion=0.2.1 /DSourceDir=dist\PageCase_0.2.1_win64 /DOutputDir=dist\artifacts packaging\windows\PageCase.iss
 
 #ifndef AppVersion
   #define AppVersion "0.2.1"
@@ -43,7 +42,6 @@ UninstallDisplayName=PageCase {#AppVersion}
 SetupIconFile={#AppIconFile}
 UninstallDisplayIcon={#AppIconFile}
 LicenseFile={#SourceDir}\LICENSE.txt
-; Force-close both new and legacy process names during upgrade from v0.1.0.
 CloseApplications=force
 CloseApplicationsFilter=PageCase.exe,PDFStudio.exe,ProjectP.exe
 RestartApplications=yes
@@ -65,15 +63,18 @@ Name: "{group}\{cm:UninstallProgram,PageCase}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\PageCase"; Filename: "{app}\PageCase.exe"; IconFilename: "{app}\PageCase.exe"; Tasks: desktopicon
 
 [Run]
-; postinstall + nowait: relaunch after /SILENT in-app update (do not use skipifsilent).
 Filename: "{app}\PageCase.exe"; Description: "{cm:LaunchProgram,PageCase}"; Flags: nowait postinstall
 
 [InstallDelete]
-; Drop legacy Start Menu / desktop entries left from PDF Studio branding.
+; Legacy branding shortcuts
 Type: filesandordirs; Name: "{autoprograms}\PDF Studio"
 Type: files; Name: "{autodesktop}\PDF Studio.lnk"
 Type: files; Name: "{userdesktop}\PDF Studio.lnk"
 Type: files; Name: "{commondesktop}\PDF Studio.lnk"
+; Legacy executables left when only the new PageCase.exe is shipped
+Type: files; Name: "{app}\PDFStudio.exe"
+Type: files; Name: "{app}\ProjectP.exe"
+Type: files; Name: "{app}\PDF Studio.exe"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
@@ -81,12 +82,21 @@ Type: filesandordirs; Name: "{app}"
 [Code]
 const
   LegacyAppDirName = 'PDF Studio';
+  NewAppDirName = 'PageCase';
   LegacyDisplayPrefix = 'PDF Studio';
   UninstallRootPath = 'Software\Microsoft\Windows\CurrentVersion\Uninstall';
+
+var
+  LegacyDirToRemove: String;
 
 function IsLegacyDisplayName(const DisplayName: String): Boolean;
 begin
   Result := (Pos(LegacyDisplayPrefix, DisplayName) = 1);
+end;
+
+function IsDefaultLegacyDirName(const Dir: String): Boolean;
+begin
+  Result := CompareText(ExtractFileName(RemoveBackslashUnlessRoot(Dir)), LegacyAppDirName) = 0;
 end;
 
 procedure DeleteUninstallKeyIfLegacy(RootKey: Integer; const SubKeyPath: String);
@@ -118,38 +128,76 @@ end;
 
 procedure RemoveLegacyUninstallEntries;
 begin
-  { After AppId entry is PageCase, leftover "PDF Studio" keys are orphans. }
   SweepUninstallRoot(HKLM, UninstallRootPath);
   SweepUninstallRoot(HKCU, UninstallRootPath);
   SweepUninstallRoot(HKLM32, UninstallRootPath);
   SweepUninstallRoot(HKCU32, UninstallRootPath);
 end;
 
-procedure RemoveLegacyInstallDir;
+procedure RemoveLegacyExecutablesInApp;
+begin
+  DeleteFile(ExpandConstant('{app}\PDFStudio.exe'));
+  DeleteFile(ExpandConstant('{app}\ProjectP.exe'));
+  DeleteFile(ExpandConstant('{app}\PDF Studio.exe'));
+end;
+
+procedure RemoveSavedLegacyInstallDir;
 var
-  LegacyDir, CurrentApp, Unins: String;
-  ResultCode: Integer;
+  CurrentApp: String;
+begin
+  if LegacyDirToRemove = '' then
+    Exit;
+  CurrentApp := RemoveBackslashUnlessRoot(ExpandConstant('{app}'));
+  if CompareText(LegacyDirToRemove, CurrentApp) = 0 then
+    Exit;
+  { Do not run old unins000.exe — same AppId; it would fight this install's uninstall entry. }
+  if DirExists(LegacyDirToRemove) then
+    DelTree(LegacyDirToRemove, True, True, True);
+end;
+
+procedure RemoveOrphanDefaultLegacyDir;
+var
+  LegacyDir, CurrentApp: String;
 begin
   LegacyDir := ExpandConstant('{autopf}\' + LegacyAppDirName);
   CurrentApp := ExpandConstant('{app}');
   if CompareText(RemoveBackslashUnlessRoot(LegacyDir), RemoveBackslashUnlessRoot(CurrentApp)) = 0 then
     Exit;
-  if not DirExists(LegacyDir) then
-    Exit;
-
-  Unins := LegacyDir + '\unins000.exe';
-  if FileExists(Unins) then
-    Exec(Unins, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-
   if DirExists(LegacyDir) then
     DelTree(LegacyDir, True, True, True);
 end;
 
+{ Default folder name "PDF Studio" → sibling "PageCase". Custom folder names stay. }
+procedure MaybeMigrateDefaultInstallDir;
+var
+  Prev, Parent, NewDir: String;
+begin
+  LegacyDirToRemove := '';
+  Prev := RemoveBackslashUnlessRoot(WizardForm.DirEdit.Text);
+  if not IsDefaultLegacyDirName(Prev) then
+    Exit;
+
+  LegacyDirToRemove := Prev;
+  Parent := ExtractFilePath(Prev);
+  NewDir := AddBackslash(Parent) + NewAppDirName;
+  WizardForm.DirEdit.Text := NewDir;
+end;
+
+procedure InitializeWizard;
+begin
+  MaybeMigrateDefaultInstallDir;
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
+  if CurStep = ssInstall then
+    RemoveLegacyExecutablesInApp;
+
   if CurStep = ssPostInstall then
   begin
-    RemoveLegacyInstallDir;
+    RemoveLegacyExecutablesInApp;
+    RemoveSavedLegacyInstallDir;
+    RemoveOrphanDefaultLegacyDir;
     RemoveLegacyUninstallEntries;
   end;
 end;
