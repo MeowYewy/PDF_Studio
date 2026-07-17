@@ -12,6 +12,7 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QProcess>
+#include <QRegularExpression>
 #include <QSaveFile>
 #include <QStandardPaths>
 #include <QTimer>
@@ -21,19 +22,20 @@
 
 namespace {
 
-// Same GitHub repo: will be renamed PDF_Studio → PageCase (redirects keep old URLs alive).
-// Prefer PageCase; fall back to PDF_Studio so checks work before/after the rename.
-constexpr auto kManifestUrlPrimary =
+// Probe these in parallel; first valid manifest wins (others aborted).
+constexpr auto kManifestGitHub =
     "https://raw.githubusercontent.com/MeowYewy/PageCase/main/resources/update.json";
-constexpr auto kManifestUrlFallback =
+constexpr auto kManifestGitHubLegacy =
     "https://raw.githubusercontent.com/MeowYewy/PDF_Studio/main/resources/update.json";
+constexpr auto kManifestMirror =
+    "https://gitee.com/MeowYewy/PageCase/raw/main/resources/update.json";
 
-// /SILENT shows Inno progress UI; /VERYSILENT hides everything.
 constexpr auto kDefaultSilentInstallArgs =
     "/SILENT /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS";
 
-// Reject truncated / HTML error pages posing as installers.
 constexpr qint64 kMinInstallerBytes = 512 * 1024;
+// Small parallel probe only — first source to deliver this many bytes wins the full download.
+constexpr qint64 kSpeedProbeBytes = 256 * 1024;
 
 QStringList splitVersion(const QString &version)
 {
@@ -55,14 +57,23 @@ void configureUpdateRequest(QNetworkRequest &request)
     request.setTransferTimeout(60'000);
 }
 
+QString normalizeVersionTag(const QString &version)
+{
+    QString v = version.trimmed();
+    if (v.startsWith(QLatin1Char('v'), Qt::CaseInsensitive))
+        v = v.mid(1);
+    return v;
+}
+
 } // namespace
 
 UpdateChecker::UpdateChecker(QObject *parent)
     : QObject(parent)
     , m_network(new QNetworkAccessManager(this))
     , m_changelog(loadChangelog())
-    , m_manifestUrls({QString::fromUtf8(kManifestUrlPrimary),
-                      QString::fromUtf8(kManifestUrlFallback)})
+    , m_manifestUrls({QString::fromUtf8(kManifestGitHub),
+                      QString::fromUtf8(kManifestMirror),
+                      QString::fromUtf8(kManifestGitHubLegacy)})
 {
 }
 
@@ -99,8 +110,7 @@ QVariantList UpdateChecker::loadChangelog()
                     notesMap.insert(it.key(), it.value().toString());
                 item.insert(QStringLiteral("notesMap"), notesMap);
             } else {
-                const QString fallback = notesValue.toString();
-                item.insert(QStringLiteral("notes"), fallback);
+                item.insert(QStringLiteral("notes"), notesValue.toString());
             }
             entries.append(item);
         }
@@ -164,14 +174,68 @@ void UpdateChecker::setHasUpdate(bool value)
     emit hasUpdateChanged();
 }
 
-void UpdateChecker::abortActiveReply()
+void UpdateChecker::abortReply(QNetworkReply *reply)
 {
-    if (!m_activeReply)
+    if (!reply)
         return;
-    m_activeReply->disconnect(this);
-    m_activeReply->abort();
-    m_activeReply->deleteLater();
-    m_activeReply = nullptr;
+    reply->disconnect(this);
+    reply->abort();
+    reply->deleteLater();
+}
+
+void UpdateChecker::abortAllNetworkReplies()
+{
+    const QList<QNetworkReply *> replies = m_replies;
+    m_replies.clear();
+    for (QNetworkReply *reply : replies)
+        abortReply(reply);
+    m_manifestPending = 0;
+    m_downloadPhase = DownloadPhase::Idle;
+}
+
+QStringList UpdateChecker::expandDownloadMirrors(const QStringList &urls, const QString &version)
+{
+    QStringList out;
+    const QString ver = normalizeVersionTag(version);
+    const QString fileName = QStringLiteral("PageCase_%1_win64_Setup.exe").arg(ver);
+    const QString tag = QStringLiteral("v%1").arg(ver);
+
+    auto appendUnique = [&out](const QString &u) {
+        const QString t = u.trimmed();
+        if (t.isEmpty())
+            return;
+        if (!out.contains(t, Qt::CaseInsensitive))
+            out.append(t);
+    };
+
+    for (const QString &u : urls)
+        appendUnique(u);
+
+    // Same asset on the secondary host — race at download time; loser is aborted.
+    appendUnique(QStringLiteral("https://github.com/MeowYewy/PageCase/releases/download/%1/%2")
+                     .arg(tag, fileName));
+    appendUnique(QStringLiteral("https://gitee.com/MeowYewy/PageCase/releases/download/%1/%2")
+                     .arg(tag, fileName));
+
+    // If manifest pointed at a differently named asset, keep host mirrors for that name too.
+    static const QRegularExpression releasePath(
+        QStringLiteral(R"(https?://(?:github\.com|gitee\.com)/([^/]+)/([^/]+)/releases/download/([^/]+)/([^?\s]+))"),
+        QRegularExpression::CaseInsensitiveOption);
+    for (const QString &u : urls) {
+        const QRegularExpressionMatch m = releasePath.match(u);
+        if (!m.hasMatch())
+            continue;
+        const QString owner = m.captured(1);
+        const QString repo = m.captured(2);
+        const QString relTag = m.captured(3);
+        const QString asset = m.captured(4);
+        appendUnique(QStringLiteral("https://github.com/%1/%2/releases/download/%3/%4")
+                         .arg(owner, repo, relTag, asset));
+        appendUnique(QStringLiteral("https://gitee.com/%1/%2/releases/download/%3/%4")
+                         .arg(owner, repo, relTag, asset));
+    }
+
+    return out;
 }
 
 void UpdateChecker::checkForUpdates()
@@ -179,87 +243,105 @@ void UpdateChecker::checkForUpdates()
     if (m_status == Checking || m_status == Downloading || m_installLaunched)
         return;
 
-    abortActiveReply();
-    m_manifestUrlIndex = 0;
+    abortAllNetworkReplies();
+    m_manifestResolved = false;
     setStatus(Checking);
-    fetchManifestAt(0);
+    startManifestRace();
 }
 
-void UpdateChecker::fetchManifestAt(int index)
+void UpdateChecker::startManifestRace()
 {
-    if (index < 0 || index >= m_manifestUrls.size()) {
+    m_manifestPending = 0;
+    for (const QString &url : m_manifestUrls) {
+        QNetworkRequest request{QUrl(url)};
+        configureUpdateRequest(request);
+        QNetworkReply *reply = m_network->get(request);
+        m_replies.append(reply);
+        ++m_manifestPending;
+        connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+            onManifestReplyFinished(reply);
+        });
+    }
+    if (m_manifestPending == 0)
         setStatus(CheckFailed);
+}
+
+void UpdateChecker::onManifestReplyFinished(QNetworkReply *reply)
+{
+    if (!reply)
+        return;
+
+    m_replies.removeOne(reply);
+    const bool ok = reply->error() == QNetworkReply::NoError;
+    const QByteArray body = ok ? reply->readAll() : QByteArray();
+    reply->deleteLater();
+
+    if (m_manifestResolved) {
+        if (m_manifestPending > 0)
+            --m_manifestPending;
         return;
     }
 
-    m_manifestUrlIndex = index;
-    QNetworkRequest request{QUrl(m_manifestUrls.at(index))};
-    configureUpdateRequest(request);
-    m_activeReply = m_network->get(request);
+    --m_manifestPending;
 
-    connect(m_activeReply, &QNetworkReply::finished, this, [this]() {
-        QNetworkReply *reply = m_activeReply;
-        m_activeReply = nullptr;
+    if (ok && tryApplyManifest(body)) {
+        m_manifestResolved = true;
+        // Abort slower mirrors — only one manifest is applied.
+        const QList<QNetworkReply *> others = m_replies;
+        m_replies.clear();
+        m_manifestPending = 0;
+        for (QNetworkReply *other : others)
+            abortReply(other);
+        return;
+    }
 
-        if (!reply) {
-            setStatus(CheckFailed);
-            return;
-        }
-
-        const bool ok = reply->error() == QNetworkReply::NoError;
-        const QByteArray body = ok ? reply->readAll() : QByteArray();
-        reply->deleteLater();
-
-        if (!ok) {
-            if (m_manifestUrlIndex + 1 < m_manifestUrls.size()) {
-                fetchManifestAt(m_manifestUrlIndex + 1);
-                return;
-            }
-            setStatus(CheckFailed);
-            return;
-        }
-
-        parseUpdateManifest(body);
-    });
+    if (m_manifestPending <= 0 && !m_manifestResolved)
+        setStatus(CheckFailed);
 }
 
-void UpdateChecker::parseUpdateManifest(const QByteArray &data)
+bool UpdateChecker::tryApplyManifest(const QByteArray &data)
 {
     const QJsonDocument doc = QJsonDocument::fromJson(data);
-    if (!doc.isObject()) {
-        if (m_manifestUrlIndex + 1 < m_manifestUrls.size()) {
-            fetchManifestAt(m_manifestUrlIndex + 1);
-            return;
-        }
-        setStatus(CheckFailed);
-        return;
-    }
+    if (!doc.isObject())
+        return false;
 
     const QJsonObject root = doc.object();
     const QString remoteVersion = root.value(QStringLiteral("version")).toString().trimmed();
-    const QString downloadUrl = root.value(QStringLiteral("downloadUrl")).toString().trimmed();
+    if (remoteVersion.isEmpty())
+        return false;
 
-    if (remoteVersion.isEmpty() || downloadUrl.isEmpty()) {
-        if (m_manifestUrlIndex + 1 < m_manifestUrls.size()) {
-            fetchManifestAt(m_manifestUrlIndex + 1);
-            return;
+    QStringList urls;
+    const QString primary = root.value(QStringLiteral("downloadUrl")).toString().trimmed();
+    if (!primary.isEmpty())
+        urls.append(primary);
+
+    const QJsonValue mirrors = root.value(QStringLiteral("downloadUrls"));
+    if (mirrors.isArray()) {
+        for (const QJsonValue &v : mirrors.toArray()) {
+            const QString u = v.toString().trimmed();
+            if (!u.isEmpty())
+                urls.append(u);
         }
-        setStatus(CheckFailed);
-        return;
     }
 
-    const QUrl url(downloadUrl);
-    if (!url.isValid() || (url.scheme() != QLatin1String("https") && url.scheme() != QLatin1String("http"))) {
-        setStatus(CheckFailed);
-        return;
+    urls = expandDownloadMirrors(urls, remoteVersion);
+    QStringList validUrls;
+    for (const QString &u : urls) {
+        const QUrl url(u);
+        if (url.isValid()
+            && (url.scheme() == QLatin1String("https") || url.scheme() == QLatin1String("http"))) {
+            validUrls.append(u);
+        }
     }
+    if (validUrls.isEmpty())
+        return false;
 
     m_latestVersion = remoteVersion;
-    m_downloadUrl = downloadUrl;
+    m_downloadUrls = validUrls;
+    m_downloadUrl = validUrls.constFirst();
     m_silentInstallArgs = root.value(QStringLiteral("silentInstallArgs")).toString();
     if (m_silentInstallArgs.trimmed().isEmpty())
         m_silentInstallArgs = QString::fromUtf8(kDefaultSilentInstallArgs);
-    // Prefer visible progress bar over fully hidden install.
     m_silentInstallArgs.replace(QStringLiteral("/VERYSILENT"), QStringLiteral("/SILENT"),
                                 Qt::CaseInsensitive);
     emit latestVersionChanged();
@@ -267,20 +349,24 @@ void UpdateChecker::parseUpdateManifest(const QByteArray &data)
 
     if (compareVersions(localVersion(), remoteVersion) < 0) {
         setHasUpdate(true);
-        // Keep existing package if already downloaded for this version.
-        if (!m_installerPath.isEmpty() && QFile::exists(m_installerPath)
-            && m_installerPath.contains(remoteVersion) && looksLikeWindowsInstaller(m_installerPath)) {
-            setStatus(ReadyToInstall);
-            return;
-        }
-        setStatus(UpdateAvailable);
-        QTimer::singleShot(0, this, &UpdateChecker::startDownload);
+        applyUpdateAvailable();
+    } else {
+        m_installerPath.clear();
+        setHasUpdate(false);
+        setStatus(UpToDate);
+    }
+    return true;
+}
+
+void UpdateChecker::applyUpdateAvailable()
+{
+    if (!m_installerPath.isEmpty() && QFile::exists(m_installerPath)
+        && m_installerPath.contains(m_latestVersion) && looksLikeWindowsInstaller(m_installerPath)) {
+        setStatus(ReadyToInstall);
         return;
     }
-
-    m_installerPath.clear();
-    setHasUpdate(false);
-    setStatus(UpToDate);
+    setStatus(UpdateAvailable);
+    QTimer::singleShot(0, this, &UpdateChecker::startDownload);
 }
 
 void UpdateChecker::downloadUpdate()
@@ -291,7 +377,7 @@ void UpdateChecker::downloadUpdate()
         installUpdate();
         return;
     }
-    if (!m_hasUpdate || m_downloadUrl.isEmpty()) {
+    if (!m_hasUpdate || m_downloadUrls.isEmpty()) {
         if (m_status != Checking)
             checkForUpdates();
         return;
@@ -306,105 +392,239 @@ bool UpdateChecker::looksLikeWindowsInstaller(const QString &path)
         return false;
     if (file.size() < kMinInstallerBytes)
         return false;
-    const QByteArray magic = file.read(2);
-    return magic == QByteArrayLiteral("MZ");
+    return file.read(2) == QByteArrayLiteral("MZ");
 }
 
 void UpdateChecker::startDownload()
 {
-    if (m_downloadUrl.isEmpty() || m_installLaunched) {
+    if (m_downloadUrls.isEmpty() || m_installLaunched) {
         setStatus(DownloadFailed);
         return;
     }
 
-    abortActiveReply();
+    abortAllNetworkReplies();
+    m_downloadQueue = m_downloadUrls;
 
     setStatus(Downloading);
     m_downloadProgress = 0;
     emit downloadProgressChanged();
 
-    QNetworkRequest request{QUrl(m_downloadUrl)};
+    // One candidate → full download only. Several → tiny parallel probe, then one full GET.
+    if (m_downloadQueue.size() == 1) {
+        startFullDownload(m_downloadQueue.takeFirst());
+        return;
+    }
+    startSpeedProbe();
+}
+
+void UpdateChecker::startSpeedProbe()
+{
+    m_downloadPhase = DownloadPhase::Probing;
+
+    for (const QString &url : m_downloadQueue) {
+        QNetworkRequest request{QUrl(url)};
+        configureUpdateRequest(request);
+        request.setTransferTimeout(30'000);
+        // Prefer a ranged probe when the host supports it (less wasted bandwidth).
+        request.setRawHeader("Range",
+                             QByteArray("bytes=0-") + QByteArray::number(kSpeedProbeBytes - 1));
+
+        QNetworkReply *reply = m_network->get(request);
+        reply->setProperty("sourceUrl", url);
+        m_replies.append(reply);
+
+        connect(reply, &QNetworkReply::downloadProgress, this,
+                [this, reply](qint64 received, qint64 total) {
+                    Q_UNUSED(total);
+                    onProbeProgress(reply, received);
+                });
+        connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+            onProbeReplyFinished(reply);
+        });
+    }
+
+    if (m_replies.isEmpty())
+        setStatus(DownloadFailed);
+}
+
+void UpdateChecker::onProbeProgress(QNetworkReply *reply, qint64 received)
+{
+    if (m_downloadPhase != DownloadPhase::Probing || !reply)
+        return;
+    if (received < kSpeedProbeBytes)
+        return;
+
+    const QString url = reply->property("sourceUrl").toString();
+    selectFastestAndDownload(url);
+}
+
+void UpdateChecker::onProbeReplyFinished(QNetworkReply *reply)
+{
+    if (!reply)
+        return;
+
+    m_replies.removeOne(reply);
+    const QString url = reply->property("sourceUrl").toString();
+    const auto err = reply->error();
+    const QByteArray body = (err == QNetworkReply::NoError) ? reply->readAll() : QByteArray();
+    reply->deleteLater();
+
+    if (m_downloadPhase != DownloadPhase::Probing)
+        return;
+
+    // Ranged probe completed with usable payload — treat as speed winner.
+    if (err == QNetworkReply::NoError && body.size() >= qMin(kSpeedProbeBytes, qint64(64 * 1024))
+        && (body.startsWith("MZ") || body.size() >= kSpeedProbeBytes)) {
+        selectFastestAndDownload(url);
+        return;
+    }
+
+    if (err != QNetworkReply::NoError || body.isEmpty())
+        m_downloadQueue.removeAll(url);
+
+    // All probes done without a winner → one-at-a-time full download fallback.
+    if (m_replies.isEmpty() && m_downloadPhase == DownloadPhase::Probing) {
+        if (m_downloadQueue.isEmpty()) {
+            setStatus(DownloadFailed);
+            return;
+        }
+        startFullDownload(m_downloadQueue.takeFirst());
+    }
+}
+
+void UpdateChecker::selectFastestAndDownload(const QString &url)
+{
+    if (m_downloadPhase != DownloadPhase::Probing)
+        return;
+
+    // Stop every probe immediately so only one full download uses the link.
+    m_downloadPhase = DownloadPhase::Full;
+    const QList<QNetworkReply *> probes = m_replies;
+    m_replies.clear();
+    for (QNetworkReply *probe : probes)
+        abortReply(probe);
+
+    m_downloadQueue.removeAll(url);
+    startFullDownload(url);
+}
+
+void UpdateChecker::startFullDownload(const QString &url)
+{
+    if (url.isEmpty()) {
+        if (!tryNextFullDownload())
+            setStatus(DownloadFailed);
+        return;
+    }
+
+    m_downloadPhase = DownloadPhase::Full;
+    m_downloadUrl = url;
+    emit downloadUrlChanged();
+
+    QNetworkRequest request{QUrl(url)};
     configureUpdateRequest(request);
     request.setTransferTimeout(10 * 60'000);
-    m_activeReply = m_network->get(request);
 
-    connect(m_activeReply, &QNetworkReply::downloadProgress, this,
+    QNetworkReply *reply = m_network->get(request);
+    reply->setProperty("sourceUrl", url);
+    m_replies.append(reply);
+
+    connect(reply, &QNetworkReply::downloadProgress, this,
             [this](qint64 received, qint64 total) {
-                if (total <= 0)
+                if (m_downloadPhase != DownloadPhase::Full || total <= 0)
                     return;
                 const int progress = int((received * 100) / total);
-                if (progress == m_downloadProgress)
+                if (progress <= m_downloadProgress)
                     return;
                 m_downloadProgress = qBound(0, progress, 99);
                 emit downloadProgressChanged();
             });
-
-    connect(m_activeReply, &QNetworkReply::finished, this, [this]() {
-        QNetworkReply *reply = m_activeReply;
-        m_activeReply = nullptr;
-
-        if (!reply || reply->error() != QNetworkReply::NoError) {
-            if (reply)
-                reply->deleteLater();
-            m_installerPath.clear();
-            setStatus(DownloadFailed);
-            return;
-        }
-
-        const QUrl url(m_downloadUrl);
-        QString fileName = QFileInfo(url.path()).fileName();
-        if (fileName.isEmpty() || !fileName.endsWith(QLatin1String(".exe"), Qt::CaseInsensitive))
-            fileName = QStringLiteral("PageCase_%1_update.exe").arg(m_latestVersion);
-
-        const QString destPath = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
-                                     .filePath(fileName);
-
-        // Remove a previous partial/corrupt download with the same name.
-        if (QFile::exists(destPath))
-            QFile::remove(destPath);
-
-        QSaveFile out(destPath);
-        if (!out.open(QIODevice::WriteOnly)) {
-            reply->deleteLater();
-            m_installerPath.clear();
-            setStatus(DownloadFailed);
-            return;
-        }
-
-        const QByteArray payload = reply->readAll();
-        reply->deleteLater();
-
-        if (payload.size() < kMinInstallerBytes || !payload.startsWith("MZ")) {
-            m_installerPath.clear();
-            setStatus(DownloadFailed);
-            return;
-        }
-
-        if (out.write(payload) != payload.size() || !out.commit()) {
-            m_installerPath.clear();
-            setStatus(DownloadFailed);
-            return;
-        }
-
-        if (!looksLikeWindowsInstaller(destPath)) {
-            QFile::remove(destPath);
-            m_installerPath.clear();
-            setStatus(DownloadFailed);
-            return;
-        }
-
-        m_installerPath = destPath;
-        m_downloadProgress = 100;
-        emit downloadProgressChanged();
-        setStatus(ReadyToInstall);
-        emit installerReadyChanged();
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        onFullDownloadFinished(reply);
     });
+}
+
+void UpdateChecker::onFullDownloadFinished(QNetworkReply *reply)
+{
+    if (!reply)
+        return;
+
+    m_replies.removeOne(reply);
+    const QString sourceUrl = reply->property("sourceUrl").toString();
+    const bool ok = reply->error() == QNetworkReply::NoError;
+    const QByteArray payload = ok ? reply->readAll() : QByteArray();
+    reply->deleteLater();
+
+    if (m_downloadPhase != DownloadPhase::Full)
+        return;
+
+    if (!ok || payload.size() < kMinInstallerBytes || !payload.startsWith("MZ")) {
+        if (!tryNextFullDownload()) {
+            m_installerPath.clear();
+            setStatus(DownloadFailed);
+        }
+        return;
+    }
+
+    finishInstallerSave(payload, sourceUrl);
+}
+
+bool UpdateChecker::tryNextFullDownload()
+{
+    while (!m_downloadQueue.isEmpty()) {
+        const QString next = m_downloadQueue.takeFirst();
+        if (next.isEmpty() || next == m_downloadUrl)
+            continue;
+        m_downloadProgress = 0;
+        emit downloadProgressChanged();
+        startFullDownload(next);
+        return true;
+    }
+    return false;
+}
+
+void UpdateChecker::finishInstallerSave(const QByteArray &payload, const QString &sourceUrl)
+{
+    m_downloadUrl = sourceUrl;
+    emit downloadUrlChanged();
+
+    QString fileName = QFileInfo(QUrl(sourceUrl).path()).fileName();
+    if (fileName.isEmpty() || !fileName.endsWith(QLatin1String(".exe"), Qt::CaseInsensitive))
+        fileName = QStringLiteral("PageCase_%1_update.exe").arg(m_latestVersion);
+
+    const QString destPath = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
+                                 .filePath(fileName);
+
+    if (QFile::exists(destPath))
+        QFile::remove(destPath);
+
+    QSaveFile out(destPath);
+    if (!out.open(QIODevice::WriteOnly) || out.write(payload) != payload.size() || !out.commit()) {
+        if (!tryNextFullDownload()) {
+            m_installerPath.clear();
+            setStatus(DownloadFailed);
+        }
+        return;
+    }
+
+    if (!looksLikeWindowsInstaller(destPath)) {
+        QFile::remove(destPath);
+        if (!tryNextFullDownload()) {
+            m_installerPath.clear();
+            setStatus(DownloadFailed);
+        }
+        return;
+    }
+
+    m_downloadPhase = DownloadPhase::Idle;
+    m_installerPath = destPath;
+    m_downloadProgress = 100;
+    emit downloadProgressChanged();
+    setStatus(ReadyToInstall);
+    emit installerReadyChanged();
 }
 
 void UpdateChecker::quitForInstaller()
 {
-    // Close top-level windows first so QML teardown is orderly; then quit.
-    // Avoid racing Inno's CloseApplications against a half-alive UI.
     const auto windows = QGuiApplication::topLevelWindows();
     for (QWindow *window : windows) {
         if (window)
@@ -430,7 +650,6 @@ void UpdateChecker::installUpdate()
     QString argsLine = m_silentInstallArgs.trimmed().isEmpty()
                            ? QString::fromUtf8(kDefaultSilentInstallArgs)
                            : m_silentInstallArgs;
-    // Ensure close/restart flags survive a partial remote override.
     if (!argsLine.contains(QStringLiteral("/CLOSEAPPLICATIONS"), Qt::CaseInsensitive))
         argsLine += QStringLiteral(" /CLOSEAPPLICATIONS");
     if (!argsLine.contains(QStringLiteral("/RESTARTAPPLICATIONS"), Qt::CaseInsensitive))
@@ -441,7 +660,6 @@ void UpdateChecker::installUpdate()
     qint64 pid = 0;
     const bool started = QProcess::startDetached(m_installerPath, args, QString(), &pid);
     if (!started || pid <= 0) {
-        // Last resort: no args (user sees wizard) — still better than stuck ReadyToInstall.
         pid = 0;
         if (!QProcess::startDetached(m_installerPath, QStringList(), QString(), &pid) || pid <= 0) {
             setStatus(DownloadFailed);
@@ -450,9 +668,6 @@ void UpdateChecker::installUpdate()
     }
 
     m_installLaunched = true;
-    abortActiveReply();
-
-    // Give the installer process time to initialize before we exit; Inno then
-    // force-closes PageCase.exe / PDFStudio.exe via CloseApplicationsFilter.
+    abortAllNetworkReplies();
     QTimer::singleShot(500, this, &UpdateChecker::quitForInstaller);
 }

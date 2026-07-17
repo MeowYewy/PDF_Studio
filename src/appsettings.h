@@ -25,7 +25,7 @@ public:
     bool isDark() const { return m_theme == QLatin1String("dark"); }
     int languageRevision() const { return m_languageRevision; }
     int themeRevision() const { return m_themeRevision; }
-    QString appVersion() const { return QStringLiteral("0.2.1"); }
+    QString appVersion() const { return QStringLiteral("0.2.2"); }
     QString lastOutputDir() const;
     QStringList watermarkHistory() const { return m_watermarkHistory; }
     int watermarkHistoryRevision() const { return m_watermarkHistoryRevision; }

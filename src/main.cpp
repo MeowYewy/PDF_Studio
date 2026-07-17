@@ -20,7 +20,7 @@ int main(int argc, char *argv[])
     app.setOrganizationName("TechG");
     app.setOrganizationDomain("techg.local");
     app.setApplicationName("PageCase");
-    app.setApplicationVersion(QStringLiteral("0.2.1"));
+    app.setApplicationVersion(QStringLiteral("0.2.2"));
 
     QIcon appIcon(QStringLiteral(":/qt/qml/PageCase/resources/app-icon.png"));
     if (appIcon.isNull())

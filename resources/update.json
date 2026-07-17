@@ -1,6 +1,6 @@
 {
-  "version": "0.2.1",
-  "downloadUrl": "https://github.com/MeowYewy/PageCase/releases/download/v0.2.1/PageCase_0.2.1_win64_Setup.exe",
+  "version": "0.2.2",
+  "downloadUrl": "https://github.com/MeowYewy/PageCase/releases/download/v0.2.2/PageCase_0.2.2_win64_Setup.exe",
   "silentInstallArgs": "/SILENT /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS",
-  "releaseNotes": "修复了更新残留的问题。"
+  "releaseNotes": "优化了更新下载逻辑。"
 }

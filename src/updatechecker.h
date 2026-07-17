@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QList>
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -58,13 +59,31 @@ signals:
     void downloadProgressChanged();
 
 private:
+    enum class DownloadPhase {
+        Idle,
+        Probing,
+        Full,
+    };
+
     void setStatus(int status);
     void setHasUpdate(bool value);
-    void fetchManifestAt(int index);
-    void parseUpdateManifest(const QByteArray &data);
+    void startManifestRace();
+    void onManifestReplyFinished(QNetworkReply *reply);
+    bool tryApplyManifest(const QByteArray &data);
+    void applyUpdateAvailable();
     void startDownload();
-    void abortActiveReply();
+    void startSpeedProbe();
+    void onProbeProgress(QNetworkReply *reply, qint64 received);
+    void onProbeReplyFinished(QNetworkReply *reply);
+    void selectFastestAndDownload(const QString &url);
+    void startFullDownload(const QString &url);
+    void onFullDownloadFinished(QNetworkReply *reply);
+    bool tryNextFullDownload();
+    void finishInstallerSave(const QByteArray &payload, const QString &sourceUrl);
+    void abortAllNetworkReplies();
+    void abortReply(QNetworkReply *reply);
     void quitForInstaller();
+    static QStringList expandDownloadMirrors(const QStringList &urls, const QString &version);
     static bool looksLikeWindowsInstaller(const QString &path);
     static int compareVersions(const QString &lhs, const QString &rhs);
     static QVariantList loadChangelog();
@@ -74,13 +93,17 @@ private:
     int m_status = Idle;
     bool m_hasUpdate = false;
     bool m_installLaunched = false;
-    int m_manifestUrlIndex = 0;
+    bool m_manifestResolved = false;
+    int m_manifestPending = 0;
+    DownloadPhase m_downloadPhase = DownloadPhase::Idle;
     QString m_latestVersion;
     QString m_downloadUrl;
+    QStringList m_downloadUrls;
+    QStringList m_downloadQueue;
     QString m_silentInstallArgs;
     QString m_installerPath;
     int m_downloadProgress = 0;
     QVariantList m_changelog;
-    QNetworkReply *m_activeReply = nullptr;
+    QList<QNetworkReply *> m_replies;
     QStringList m_manifestUrls;
 };
