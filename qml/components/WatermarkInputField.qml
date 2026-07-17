@@ -13,19 +13,25 @@ Item {
     property string placeholderText: ""
     signal textEdited(string value)
 
+    // Expected popup height from the model, valid before the popup is shown,
+    // so the first open never flashes at a wrong position.
+    function historyPopupHeight() {
+        const n = AppSettings.watermarkHistory.length
+        if (n <= 0)
+            return 12
+        return Math.min(n * 36 + (n - 1) * 2, 132) + 12
+    }
+
     function anchorHistoryPopup() {
         const topLeft = root.mapToItem(Overlay.overlay, 0, 0)
         historyPopup.x = topLeft.x
         historyPopup.width = Math.max(root.width, 220)
-        historyPopup.y = topLeft.y - historyPopup.height - 4
+        historyPopup.y = topLeft.y - root.historyPopupHeight() - 4
     }
 
     function openHistoryPopup() {
-        const topLeft = root.mapToItem(Overlay.overlay, 0, 0)
-        historyPopup.x = topLeft.x
-        historyPopup.width = Math.max(root.width, 220)
+        root.anchorHistoryPopup()
         historyPopup.open()
-        Qt.callLater(root.anchorHistoryPopup)
     }
 
     TextField {
@@ -75,34 +81,67 @@ Item {
     Popup {
         id: historyPopup
         parent: Overlay.overlay
-        padding: 6
+        padding: 0
         modal: false
         focus: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         z: 5000
 
+        property bool reveal: false
+        onAboutToShow: reveal = true
         onOpened: Qt.callLater(root.anchorHistoryPopup)
+        onAboutToHide: reveal = false
 
         onClosed: historyBtn.focus = false
 
-        background: Rectangle {
-            radius: Theme.radiusSm
-            color: Theme.surface
-            border.color: Theme.border
-            border.width: 1
+        enter: Transition {
+            NumberAnimation {
+                property: "opacity"; from: 0; to: 1
+                duration: Theme.animFast; easing.type: Easing.OutCubic
+            }
+        }
+        exit: Transition {
+            NumberAnimation {
+                property: "opacity"; from: 1; to: 0
+                duration: Theme.animNormal; easing.type: Easing.InCubic
+            }
         }
 
-        contentItem: ListView {
-            id: historyList
-            clip: true
-            implicitHeight: Math.min(contentHeight, 132)
-            spacing: 2
-            model: AppSettings.watermarkHistory
+        background: null
 
-            onContentHeightChanged: if (historyPopup.visible)
-                                        Qt.callLater(root.anchorHistoryPopup)
+        contentItem: Item {
+            implicitHeight: historyList.height + 12
 
-            delegate: Item {
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: historyPopup.reveal ? parent.height : 0
+                radius: Theme.radiusSm
+                color: Theme.surface
+                border.color: Theme.border
+                border.width: 1
+                clip: true
+
+                Behavior on height {
+                    NumberAnimation { duration: Theme.animNormal; easing.type: Easing.OutCubic }
+                }
+
+                ListView {
+                    id: historyList
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.margins: 6
+                    clip: true
+                    height: Math.min(contentHeight, 132)
+                    spacing: 2
+                    model: AppSettings.watermarkHistory
+
+                    onContentHeightChanged: if (historyPopup.visible)
+                                                Qt.callLater(root.anchorHistoryPopup)
+
+                    delegate: Item {
                 required property int index
                 required property string modelData
 
@@ -146,6 +185,8 @@ Item {
                         root.textEdited(modelData)
                         historyPopup.close()
                     }
+                }
+            }
                 }
             }
         }

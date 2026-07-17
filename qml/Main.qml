@@ -27,6 +27,18 @@ ApplicationWindow {
         alternateBase: Theme.surfaceAlt
     }
 
+    // Sits behind all content: clicks on empty areas that no control handles
+    // land here and clear the active focus (e.g. the page-range field), so
+    // its accent border fades out just like the file picker search box.
+    MouseArea {
+        anchors.fill: parent
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        onPressed: function(mouse) {
+            root.contentItem.forceActiveFocus()
+            mouse.accepted = false
+        }
+    }
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 0
@@ -109,6 +121,7 @@ ApplicationWindow {
         hoverEnabled: true
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         onClicked: settingsDropdown.close()
+        onWheel: function(wheel) { wheel.accepted = true }
     }
 
     SettingsDropdown {

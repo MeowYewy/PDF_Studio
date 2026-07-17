@@ -5,9 +5,10 @@ import PageCase
 Item {
     id: root
 
-    implicitWidth: 156
+    implicitWidth: compact ? 38 : 156
     implicitHeight: 38
 
+    property bool compact: false
     property var model: []
     property int currentIndex: 0
     signal activated(int index)
@@ -22,9 +23,13 @@ Item {
 
     function repositionPopup() {
         const topLeft = root.mapToItem(Overlay.overlay, 0, 0)
-        menuPopup.x = topLeft.x
-        menuPopup.width = root.width
-        menuPopup.y = topLeft.y - menuPopup.height - 4
+        menuPopup.width = root.compact ? Math.max(root.width, 56) : root.width
+        // Compact combos sit near the right edge; keep the menu right-aligned.
+        menuPopup.x = topLeft.x + root.width - menuPopup.width
+        // Use the computed height rather than menuPopup.height: it is valid
+        // before the popup is polished, so the first open never flashes at a
+        // wrong position.
+        menuPopup.y = topLeft.y - (menuPopup.listHeight + 12) - 4
     }
 
     WheelHandler {
@@ -64,8 +69,8 @@ Item {
 
         Text {
             anchors.fill: parent
-            leftPadding: 12
-            rightPadding: 24
+            leftPadding: root.compact ? 0 : 12
+            rightPadding: root.compact ? 0 : 24
             text: root.displayText
             font.pixelSize: 15
             font.family: Theme.mainFont.family
@@ -77,6 +82,7 @@ Item {
         }
 
         Text {
+            visible: !root.compact
             anchors.right: parent.right
             anchors.rightMargin: 10
             anchors.verticalCenter: parent.verticalCenter
@@ -90,32 +96,70 @@ Item {
         id: menuPopup
         parent: Overlay.overlay
         z: 7000
-        width: root.width
-        padding: 6
+        width: root.compact ? Math.max(root.width, 56) : root.width
+        padding: 0
         modal: false
         dim: false
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
-        onOpened: Qt.callLater(root.repositionPopup)
+        readonly property int listHeight: 36 * root.optionCount
+                                          + Math.max(0, root.optionCount - 1) * 2
 
-        background: Rectangle {
-            radius: Theme.radiusSm
-            color: Theme.surface
-            border.color: Theme.border
-            border.width: 1
+        property bool reveal: false
+        onAboutToShow: {
+            reveal = true
+            root.repositionPopup()
+        }
+        onAboutToHide: reveal = false
+
+        enter: Transition {
+            NumberAnimation {
+                property: "opacity"; from: 0; to: 1
+                duration: Theme.animFast; easing.type: Easing.OutCubic
+            }
+        }
+        exit: Transition {
+            NumberAnimation {
+                property: "opacity"; from: 1; to: 0
+                duration: Theme.animNormal; easing.type: Easing.InCubic
+            }
         }
 
-        contentItem: ListView {
-            clip: true
-            spacing: 2
-            interactive: false
-            implicitHeight: 36 * root.optionCount + Math.max(0, root.optionCount - 1) * 2
-            model: root.model
-            boundsBehavior: Flickable.StopAtBounds
-            onContentHeightChanged: if (menuPopup.visible)
-                                        Qt.callLater(root.repositionPopup)
+        background: null
 
-            delegate: ItemDelegate {
+        contentItem: Item {
+            implicitHeight: menuPopup.listHeight + 12
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: menuPopup.reveal ? parent.height : 0
+                radius: Theme.radiusSm
+                color: Theme.surface
+                border.color: Theme.border
+                border.width: 1
+                clip: true
+
+                Behavior on height {
+                    NumberAnimation { duration: Theme.animNormal; easing.type: Easing.OutCubic }
+                }
+
+                ListView {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.margins: 6
+                    height: menuPopup.listHeight
+                    clip: true
+                    spacing: 2
+                    interactive: false
+                    model: root.model
+                    boundsBehavior: Flickable.StopAtBounds
+                    onContentHeightChanged: if (menuPopup.visible)
+                                                Qt.callLater(root.repositionPopup)
+
+                    delegate: ItemDelegate {
                 id: optionDelegate
                 width: ListView.view.width
                 height: 36
@@ -151,6 +195,8 @@ Item {
                     root.currentIndex = index
                     root.activated(index)
                     menuPopup.close()
+                }
+            }
                 }
             }
         }

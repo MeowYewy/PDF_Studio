@@ -5,9 +5,10 @@ import PageCase
 Item {
     id: root
 
-    implicitWidth: Theme.compactControlWidth
+    implicitWidth: compact ? 38 : Theme.compactControlWidth
     implicitHeight: 38
 
+    property bool compact: false
     property int countValue: 1
 
     readonly property var countOptions: [
@@ -63,8 +64,8 @@ Item {
 
         Text {
             anchors.fill: parent
-            leftPadding: 20
-            rightPadding: 20
+            leftPadding: root.compact ? 0 : 20
+            rightPadding: root.compact ? 0 : 20
             text: countOptions[selectedIndex].label
             font.pixelSize: 15
             font.family: Theme.mainFont.family
@@ -75,6 +76,7 @@ Item {
         }
 
         Text {
+            visible: !root.compact
             anchors.right: parent.right
             anchors.rightMargin: 10
             anchors.verticalCenter: parent.verticalCenter
@@ -87,31 +89,67 @@ Item {
     Popup {
         id: menuPopup
         x: 0
+        // Positioned above the control before it is ever shown, so the first
+        // open never flashes at the default (below) position.
+        y: -height - 4
         width: root.width
-        padding: 6
+        padding: 0
         modal: false
         dim: false
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
-        onOpened: Qt.callLater(function() {
-            menuPopup.y = -menuPopup.height - 4
-        })
+        readonly property int listHeight: 36 * root.countOptions.length
+                                          + Math.max(0, root.countOptions.length - 1) * 2
 
-        background: Rectangle {
-            radius: Theme.radiusSm
-            color: Theme.surface
-            border.color: Theme.border
-            border.width: 1
+        property bool reveal: false
+        onAboutToShow: reveal = true
+        onAboutToHide: reveal = false
+
+        enter: Transition {
+            NumberAnimation {
+                property: "opacity"; from: 0; to: 1
+                duration: Theme.animFast; easing.type: Easing.OutCubic
+            }
+        }
+        exit: Transition {
+            NumberAnimation {
+                property: "opacity"; from: 1; to: 0
+                duration: Theme.animNormal; easing.type: Easing.InCubic
+            }
         }
 
-        contentItem: ListView {
-            clip: true
-            spacing: 2
-            implicitHeight: 36 * countOptions.length + Math.max(0, countOptions.length - 1) * 2
-            model: countOptions
-            boundsBehavior: Flickable.StopAtBounds
+        background: null
 
-            delegate: ItemDelegate {
+        contentItem: Item {
+            implicitHeight: menuPopup.listHeight + 12
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: menuPopup.reveal ? parent.height : 0
+                radius: Theme.radiusSm
+                color: Theme.surface
+                border.color: Theme.border
+                border.width: 1
+                clip: true
+
+                Behavior on height {
+                    NumberAnimation { duration: Theme.animNormal; easing.type: Easing.OutCubic }
+                }
+
+                ListView {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.margins: 6
+                    height: menuPopup.listHeight
+                    clip: true
+                    spacing: 2
+                    model: root.countOptions
+                    boundsBehavior: Flickable.StopAtBounds
+
+                    delegate: ItemDelegate {
                 id: optionDelegate
                 width: ListView.view.width
                 height: 36
@@ -148,6 +186,8 @@ Item {
                 onClicked: {
                     root.applySelection(index)
                     menuPopup.close()
+                }
+            }
                 }
             }
         }

@@ -1,4 +1,5 @@
 #include "pdfengine.h"
+#include "officeconverter.h"
 #include "watermarklayout.h"
 
 #include <QCoreApplication>
@@ -15,8 +16,11 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QProcess>
+#include <QRegularExpression>
 #include <QStandardPaths>
 #include <QTemporaryDir>
+
+#include <algorithm>
 
 #ifdef HAS_QT_PDF
 #include <QPdfDocument>
@@ -113,6 +117,161 @@ QString textToPdf(const QString &input, const QString &outputPath)
     return {};
 }
 
+QString chineseLowerNumber(int n)
+{
+    static const QString digits[] = {
+        QStringLiteral("零"), QStringLiteral("一"), QStringLiteral("二"), QStringLiteral("三"),
+        QStringLiteral("四"), QStringLiteral("五"), QStringLiteral("六"), QStringLiteral("七"),
+        QStringLiteral("八"), QStringLiteral("九"),
+    };
+    if (n <= 0)
+        return QString::number(n);
+    if (n < 10)
+        return digits[n];
+    if (n < 20)
+        return n == 10 ? QStringLiteral("十") : QStringLiteral("十") + digits[n % 10];
+    if (n < 100) {
+        const int tens = n / 10;
+        const int ones = n % 10;
+        QString text = digits[tens] + QStringLiteral("十");
+        if (ones > 0)
+            text += digits[ones];
+        return text;
+    }
+    if (n < 1000) {
+        const int hundreds = n / 100;
+        const int rest = n % 100;
+        QString text = digits[hundreds] + QStringLiteral("百");
+        if (rest == 0)
+            return text;
+        if (rest < 10)
+            return text + QStringLiteral("零") + digits[rest];
+        return text + chineseLowerNumber(rest);
+    }
+    return QString::number(n);
+}
+
+QString chineseUpperNumber(int n)
+{
+    static const QString digits[] = {
+        QStringLiteral("零"), QStringLiteral("壹"), QStringLiteral("贰"), QStringLiteral("叁"),
+        QStringLiteral("肆"), QStringLiteral("伍"), QStringLiteral("陆"), QStringLiteral("柒"),
+        QStringLiteral("捌"), QStringLiteral("玖"),
+    };
+    if (n <= 0)
+        return QString::number(n);
+    if (n < 10)
+        return digits[n];
+    if (n < 20)
+        return n == 10 ? QStringLiteral("拾") : QStringLiteral("拾") + digits[n % 10];
+    if (n < 100) {
+        const int tens = n / 10;
+        const int ones = n % 10;
+        QString text = digits[tens] + QStringLiteral("拾");
+        if (ones > 0)
+            text += digits[ones];
+        return text;
+    }
+    if (n < 1000) {
+        const int hundreds = n / 100;
+        const int rest = n % 100;
+        QString text = digits[hundreds] + QStringLiteral("佰");
+        if (rest == 0)
+            return text;
+        if (rest < 10)
+            return text + QStringLiteral("零") + digits[rest];
+        return text + chineseUpperNumber(rest);
+    }
+    return QString::number(n);
+}
+
+QString englishWordNumber(int n)
+{
+    static const char *const ones[] = {
+        "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+        "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+        "seventeen", "eighteen", "nineteen",
+    };
+    static const char *const tens[] = {
+        "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety",
+    };
+    if (n >= 0 && n < 20)
+        return QString::fromLatin1(ones[n]);
+    if (n < 100) {
+        QString text = QString::fromLatin1(tens[n / 10]);
+        if (n % 10 != 0)
+            text += QLatin1Char('-') + QString::fromLatin1(ones[n % 10]);
+        return text;
+    }
+    return QString::number(n);
+}
+
+QString formatSplitPageIndexImpl(int index, int style, const QString &language)
+{
+    if (index <= 0)
+        return QString::number(index);
+    if (style == 0)
+        return QString::number(index);
+    if (style == 2)
+        return chineseUpperNumber(index);
+    if (language.startsWith(QLatin1String("en"), Qt::CaseInsensitive))
+        return englishWordNumber(index);
+    return chineseLowerNumber(index);
+}
+
+QString splitFileName(const QString &baseName, const QString &sep, int index,
+                      int numberStyle, const QString &language)
+{
+    return baseName + sep + formatSplitPageIndexImpl(index, numberStyle, language)
+        + QStringLiteral(".pdf");
+}
+
+int pageIndexFromSplitPath(const QString &path, const QString &baseName)
+{
+    const QFileInfo info(path);
+    const QString base = info.completeBaseName();
+    if (!base.startsWith(baseName + QLatin1Char('_')))
+        return -1;
+    bool ok = false;
+    const int page = base.mid(baseName.size() + 1).toInt(&ok);
+    return ok ? page : -1;
+}
+
+void renameSplitOutputs(const QDir &dir, const QString &baseName, const QString &sep,
+                        int numberStyle, const QString &language)
+{
+    if (sep == QLatin1String("_") && numberStyle == 0)
+        return;
+
+    const QStringList files = dir.entryList(
+        QStringList{baseName + QStringLiteral("_*.pdf")}, QDir::Files, QDir::Name);
+    struct Item {
+        int index;
+        QString path;
+    };
+    QList<Item> items;
+    items.reserve(files.size());
+    for (const QString &file : files) {
+        const QString fullPath = dir.filePath(file);
+        const int index = pageIndexFromSplitPath(fullPath, baseName);
+        if (index > 0)
+            items.append({index, fullPath});
+    }
+    std::sort(items.begin(), items.end(), [](const Item &a, const Item &b) {
+        return a.index < b.index;
+    });
+
+    for (const Item &item : items) {
+        const QString target = dir.filePath(
+            splitFileName(baseName, sep, item.index, numberStyle, language));
+        if (QDir::cleanPath(item.path) == QDir::cleanPath(target))
+            continue;
+        if (QFile::exists(target))
+            QFile::remove(target);
+        QFile::rename(item.path, target);
+    }
+}
+
 } // namespace
 
 PdfEngine::PdfEngine(QObject *parent)
@@ -153,7 +312,69 @@ bool PdfEngine::runQpdf(const QStringList &args, QString *error) const
     return true;
 }
 
-QString PdfEngine::mergePdfs(const QStringList &inputs, const QString &outputPath)
+QString PdfEngine::formatSplitPageIndex(int index, int style, const QString &language)
+{
+    return formatSplitPageIndexImpl(index, style, language);
+}
+
+QString PdfEngine::normalizePageRange(const QString &raw, bool *ok)
+{
+    if (ok)
+        *ok = true;
+
+    QString text = raw;
+    text.remove(QLatin1Char(' '));
+    text.remove(QChar(0x3000)); // full-width space
+    text.replace(QChar(0xFF0C), QLatin1Char(',')); // ，
+    text.replace(QChar(0x3001), QLatin1Char(',')); // 、
+    text.replace(QChar(0xFF0D), QLatin1Char('-')); // －
+    text.replace(QChar(0x2013), QLatin1Char('-')); // –
+    text.replace(QChar(0x2014), QLatin1Char('-')); // —
+    text.replace(QChar(0xFF5E), QLatin1Char('-')); // ～
+    text.replace(QLatin1Char('~'), QLatin1Char('-'));
+
+    if (text.isEmpty())
+        return {};
+
+    static const QRegularExpression pattern(
+        QStringLiteral("^\\d+(-\\d+)?(,\\d+(-\\d+)?)*$"));
+    if (!pattern.match(text).hasMatch()) {
+        if (ok)
+            *ok = false;
+        return {};
+    }
+    return text;
+}
+
+QList<int> PdfEngine::expandPageRange(const QString &normalizedRange)
+{
+    QList<int> pages;
+    const QStringList parts = normalizedRange.split(QLatin1Char(','), Qt::SkipEmptyParts);
+    for (const QString &part : parts) {
+        const int dash = part.indexOf(QLatin1Char('-'));
+        if (dash < 0) {
+            const int n = part.toInt();
+            if (n > 0 && !pages.contains(n))
+                pages.append(n);
+            continue;
+        }
+        int a = part.left(dash).toInt();
+        int b = part.mid(dash + 1).toInt();
+        if (a <= 0 || b <= 0)
+            continue;
+        if (a > b)
+            std::swap(a, b);
+        for (int n = a; n <= b && pages.size() < 5000; ++n) {
+            if (!pages.contains(n))
+                pages.append(n);
+        }
+    }
+    std::sort(pages.begin(), pages.end());
+    return pages;
+}
+
+QString PdfEngine::mergePdfs(const QStringList &inputs, const QString &outputPath,
+                             const QStringList &pageRanges)
 {
     if (inputs.size() < 2)
         return QStringLiteral("Need at least 2 PDF files");
@@ -163,8 +384,11 @@ QString PdfEngine::mergePdfs(const QStringList &inputs, const QString &outputPat
 
     QStringList args;
     args << QStringLiteral("--empty") << QStringLiteral("--pages");
-    for (const QString &in : inputs)
-        args << in;
+    for (int i = 0; i < inputs.size(); ++i) {
+        args << inputs.at(i);
+        const QString range = i < pageRanges.size() ? pageRanges.at(i) : QString();
+        args << (range.isEmpty() ? QStringLiteral("1-z") : range);
+    }
     args << QStringLiteral("--") << outputPath;
 
     QString err;
@@ -173,11 +397,42 @@ QString PdfEngine::mergePdfs(const QStringList &inputs, const QString &outputPat
     return {};
 }
 
-QString PdfEngine::splitPdf(const QString &input, const QString &outputDir, bool byPage)
+QString PdfEngine::splitPdf(const QString &input, const QString &outputDir, bool byPage,
+                            const QString &pageRange, const QString &baseNameOverride,
+                            const QString &pageSeparator, int numberStyle,
+                            const QString &language)
 {
     QDir().mkpath(outputDir);
+    const QString baseName = baseNameOverride.isEmpty()
+        ? QFileInfo(input).completeBaseName()
+        : baseNameOverride;
+    const QString sep = pageSeparator.isEmpty() ? QStringLiteral("_") : pageSeparator.left(4);
+
+    if (!pageRange.isEmpty()) {
+        const QList<int> pages = expandPageRange(pageRange);
+        if (pages.isEmpty())
+            return QStringLiteral("Invalid page range");
+
+        for (int pageNumber : pages) {
+            const QString out = QDir(outputDir).filePath(
+                splitFileName(baseName, sep, pageNumber, numberStyle, language));
+            if (QFile::exists(out) && !QFile::remove(out))
+                return QStringLiteral("Cannot overwrite output");
+
+            QStringList args;
+            args << input << QStringLiteral("--pages") << input
+                 << QString::number(pageNumber) << QStringLiteral("--") << out;
+
+            QString err;
+            if (!runQpdf(args, &err))
+                return QStringLiteral("Split failed: %1").arg(err);
+        }
+        Q_UNUSED(byPage);
+        return {};
+    }
+
     const QString pattern = QDir(outputDir).filePath(
-        QFileInfo(input).completeBaseName() + QStringLiteral("_%d.pdf"));
+        baseName + QStringLiteral("_%d.pdf"));
 
     QStringList args;
     args << input << QStringLiteral("--split-pages") << pattern;
@@ -185,15 +440,19 @@ QString PdfEngine::splitPdf(const QString &input, const QString &outputDir, bool
     QString err;
     if (!runQpdf(args, &err))
         return QStringLiteral("Split failed: %1").arg(err);
+
+    renameSplitOutputs(QDir(outputDir), baseName, sep, numberStyle, language);
     Q_UNUSED(byPage);
     return {};
 }
 
-QString PdfEngine::rotatePdf(const QString &input, const QString &outputPath, int degrees)
+QString PdfEngine::rotatePdf(const QString &input, const QString &outputPath, int degrees,
+                             const QString &pageRange)
 {
+    const QString range = pageRange.isEmpty() ? QStringLiteral("1-z") : pageRange;
     QStringList args;
     args << input << outputPath
-         << QStringLiteral("--rotate=+%1:1-z").arg(degrees);
+         << QStringLiteral("--rotate=+%1:%2").arg(degrees).arg(range);
 
     QString err;
     if (!runQpdf(args, &err))
@@ -226,6 +485,8 @@ QString PdfEngine::convertToPdf(const QStringList &inputs, const QString &output
             err = imageToPdf(path, partPath);
         else if (isText(path))
             err = textToPdf(path, partPath);
+        else if (OfficeConverter::isWordDocument(path))
+            err = OfficeConverter::wordToPdf(path, partPath);
         else
             return QStringLiteral("Unsupported format: %1").arg(path);
 
@@ -247,10 +508,25 @@ QString PdfEngine::convertToPdf(const QStringList &inputs, const QString &output
     return mergePdfs(pdfParts, outputPath);
 }
 
+QString PdfEngine::convertPdfToWord(const QString &input, const QString &outputPath)
+{
+    if (QFileInfo(input).suffix().compare(QLatin1String("pdf"), Qt::CaseInsensitive) != 0)
+        return QStringLiteral("Word export requires a PDF file");
+    return OfficeConverter::pdfToWord(input, outputPath);
+}
+
 int PdfEngine::pageCount(const QString &pdfPath) const
 {
     if (!QFile::exists(pdfPath))
         return 0;
+
+#ifdef HAS_QT_PDF
+    {
+        QPdfDocument doc;
+        if (doc.load(pdfPath) == QPdfDocument::Error::None && doc.pageCount() > 0)
+            return doc.pageCount();
+    }
+#endif
 
     QProcess proc;
     proc.setProgram(findQpdf());
@@ -417,7 +693,7 @@ QString PdfEngine::compressPdf(const QString &input, const QString &outputPath, 
 }
 
 QString PdfEngine::createWatermarkStamp(const QString &text, const QString &outputPath, int count,
-                                        qreal pageWPt, qreal pageHPt) const
+                                        qreal pageWPt, qreal pageHPt, const QColor &color) const
 {
     if (QFile::exists(outputPath) && !QFile::remove(outputPath))
         return QStringLiteral("Cannot overwrite watermark stamp");
@@ -442,7 +718,9 @@ QString PdfEngine::createWatermarkStamp(const QString &text, const QString &outp
         imagePainter.setRenderHint(QPainter::Antialiasing, true);
         imagePainter.setRenderHint(QPainter::TextAntialiasing, true);
         imagePainter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-        WatermarkLayout::paint(imagePainter, text.trimmed(), count, pageW, pageH);
+        WatermarkLayout::Style style;
+        style.color = color;
+        WatermarkLayout::paint(imagePainter, text.trimmed(), count, pageW, pageH, style);
     }
 
     QPainter painter(&writer);
@@ -456,7 +734,8 @@ QString PdfEngine::createWatermarkStamp(const QString &text, const QString &outp
     return {};
 }
 
-QString PdfEngine::watermarkPdf(const QString &input, const QString &outputPath, const QString &text, int count)
+QString PdfEngine::watermarkPdf(const QString &input, const QString &outputPath, const QString &text,
+                                int count, const QColor &color)
 {
     if (text.trimmed().isEmpty())
         return QStringLiteral("Watermark text is required");
@@ -468,7 +747,7 @@ QString PdfEngine::watermarkPdf(const QString &input, const QString &outputPath,
     const QString stampPath = tempDir.filePath(QStringLiteral("stamp.pdf"));
     const QSizeF pageSize = firstPdfPageSizePoints(input);
     QString err = createWatermarkStamp(text.trimmed(), stampPath, count,
-                                       pageSize.width(), pageSize.height());
+                                       pageSize.width(), pageSize.height(), color);
     if (!err.isEmpty())
         return err;
 
@@ -488,13 +767,15 @@ QString PdfEngine::watermarkPdf(const QString &input, const QString &outputPath,
     return {};
 }
 
-QString PdfEngine::exportPdfAsImages(const QString &input, const QString &outputDir, const QString &format)
+QString PdfEngine::exportPdfAsImages(const QString &input, const QString &outputDir, const QString &format,
+                                     const QString &baseNameOverride)
 {
     if (QFileInfo(input).suffix().compare(QLatin1String("pdf"), Qt::CaseInsensitive) != 0)
         return QStringLiteral("Image export requires a PDF file");
 
     QDir().mkpath(outputDir);
-    const QString prefix = QDir(outputDir).filePath(QFileInfo(input).completeBaseName());
+    const QString prefix = QDir(outputDir).filePath(
+        baseNameOverride.isEmpty() ? QFileInfo(input).completeBaseName() : baseNameOverride);
 
     QStringList args;
     if (format == QLatin1String("png"))

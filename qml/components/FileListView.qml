@@ -128,6 +128,23 @@ Item {
                     font: Theme.mainFont
                 }
 
+                // Chosen page range (gray, small). Only shown once at least
+                // one file has a range; files without one read "All".
+                Text {
+                    id: rangeBadge
+                    visible: AppController.currentTab <= 2 && AppController.anyPageRangeSet
+                    Layout.maximumWidth: 84
+                    Layout.alignment: Qt.AlignVCenter
+                    text: {
+                        const r = AppController.pageRanges[rowRoot.path]
+                        return (r && r.length > 0) ? r : "All"
+                    }
+                    elide: Text.ElideRight
+                    horizontalAlignment: Text.AlignRight
+                    color: Theme.textSecondary
+                    font: Theme.captionFont
+                }
+
                 DragGrip {
                     visible: root.enableReorder
                     Layout.preferredWidth: root.gripWidth

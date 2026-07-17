@@ -1,6 +1,7 @@
 #include "pdfpreviewmodel.h"
 
 #include "appsettings.h"
+#include "officeconverter.h"
 #include "pdfengine.h"
 #include "pdfpagerenderer.h"
 #include "officetextextractor.h"
@@ -14,9 +15,12 @@
 #include <QImage>
 #include <QImageReader>
 #include <QMap>
+#include <QMutex>
+#include <QMutexLocker>
 #include <QPainter>
 #include <QRegularExpression>
 #include <QStandardPaths>
+#include <QTimer>
 #include <QUrl>
 #include <QtConcurrent/QtConcurrentRun>
 
@@ -40,6 +44,7 @@ struct PreviewPageData {
 struct PreviewBuildResult {
     QList<PreviewPageData> pages;
     QString lazyPdfFile;
+    QString lazyPdfSourceFile;
     QString lazyPdfCacheDir;
     QString lazyPdfPrefix;
     int lazyPdfGeneration = 0;
@@ -50,11 +55,13 @@ struct LazyBatchInput {
     QString pdfFile;
     QString cacheDir;
     QString prefix;
+    int generation = 0;
     QList<int> pageNumbers;
 };
 
 struct LazyBatchResult {
     QList<int> pageNumbers;
+    int generation = 0;
     QMap<int, PreviewPageData> pages;
 };
 
@@ -80,6 +87,13 @@ bool isOfficeExt(const QString &ext)
         || ext == QStringLiteral("pptx") || ext == QStringLiteral("pptm")
         || ext == QStringLiteral("ppsx")
         || ext == QStringLiteral("odt") || ext == QStringLiteral("rtf");
+}
+
+bool isWordExt(const QString &ext)
+{
+    return ext == QStringLiteral("doc") || ext == QStringLiteral("docx")
+        || ext == QStringLiteral("docm") || ext == QStringLiteral("rtf")
+        || ext == QStringLiteral("odt");
 }
 
 QString previewCacheDir()
@@ -255,6 +269,7 @@ LazyBatchResult renderLazyPdfBatch(const LazyBatchInput &input)
 {
     LazyBatchResult result;
     result.pageNumbers = input.pageNumbers;
+    result.generation = input.generation;
     if (input.pageNumbers.isEmpty())
         return result;
 
@@ -300,11 +315,37 @@ PreviewBuildResult buildPreviewPages(const QString &currentFile, bool dark, int 
     if (ext == QStringLiteral("pdf")) {
         result.pages = buildInitialPdfPages(currentFile, dark, cacheGeneration);
         result.lazyPdfFile = currentFile;
+        result.lazyPdfSourceFile = currentFile;
         result.lazyPdfCacheDir = previewCacheDir();
         result.lazyPdfPrefix = cacheKey(currentFile) + QLatin1Char('_') + QString::number(cacheGeneration);
         result.lazyPdfGeneration = cacheGeneration;
         result.lazyPdfTotalPages = result.pages.size();
         return result;
+    }
+
+    // Word documents: convert to PDF (Word/LibreOffice) so the preview looks
+    // exactly like the document does in Word, then reuse the PDF pipeline.
+    // Without Word/LibreOffice we silently use the plain-text preview below.
+    if (isWordExt(ext) && OfficeConverter::available()) {
+        QString convertError;
+        const QString cachedPdf = OfficeConverter::toPdfCached(currentFile, &convertError);
+
+        if (!cachedPdf.isEmpty() && QFile::exists(cachedPdf)) {
+            result.pages = buildInitialPdfPages(cachedPdf, dark, cacheGeneration);
+            if (!result.pages.isEmpty()) {
+                result.lazyPdfFile = cachedPdf;
+                result.lazyPdfSourceFile = currentFile;
+                result.lazyPdfCacheDir = previewCacheDir();
+                result.lazyPdfPrefix = cacheKey(cachedPdf) + QLatin1Char('_')
+                    + QString::number(cacheGeneration);
+                result.lazyPdfGeneration = cacheGeneration;
+                result.lazyPdfTotalPages = result.pages.size();
+                return result;
+            }
+            // Unreadable/corrupt cache entry — drop it so the next preview retries.
+            QFile::remove(cachedPdf);
+        }
+        // Conversion failed: fall back to plain-text preview below.
     }
 
     if (isImageExt(ext)) {
@@ -387,7 +428,7 @@ PdfPreviewModel::PdfPreviewModel(QObject *parent)
 
 PdfPreviewModel::~PdfPreviewModel()
 {
-    cancelBackgroundWork();
+    cancelBackgroundWork(true);
 }
 
 void PdfPreviewModel::setAppSettings(AppSettings *settings)
@@ -484,18 +525,24 @@ void PdfPreviewModel::resetLazyPdfState()
     m_queuedLazyPages.clear();
 }
 
-void PdfPreviewModel::cancelBackgroundWork()
+void PdfPreviewModel::cancelBackgroundWork(bool wait)
 {
+    // Never block the UI thread while a render is in flight: stale results are
+    // discarded via the rebuild token / generation checks instead. Waiting is
+    // only done on destruction so worker lambdas cannot outlive this object's
+    // watchers.
     auto *buildWatcher = static_cast<QFutureWatcher<PreviewBuildResult> *>(m_buildWatcher);
     if (buildWatcher) {
         buildWatcher->cancel();
-        buildWatcher->waitForFinished();
+        if (wait)
+            buildWatcher->waitForFinished();
     }
 
     auto *lazyWatcher = static_cast<QFutureWatcher<LazyBatchResult> *>(m_lazyWatcher);
     if (lazyWatcher) {
         lazyWatcher->cancel();
-        lazyWatcher->waitForFinished();
+        if (wait)
+            lazyWatcher->waitForFinished();
     }
 }
 
@@ -517,7 +564,16 @@ void PdfPreviewModel::applyBuildResult(const QList<PageItem> &pages, const LazyP
 
 void PdfPreviewModel::startAsyncRebuild()
 {
-    cancelBackgroundWork();
+    // Detach (without blocking) any in-flight build; its result is discarded
+    // via the token check and the watcher deletes itself once done.
+    if (auto *old = static_cast<QFutureWatcher<PreviewBuildResult> *>(m_buildWatcher)) {
+        m_buildWatcher = nullptr;
+        old->cancel();
+        disconnect(old, nullptr, this, nullptr);
+        connect(old, &QFutureWatcherBase::finished, old, &QObject::deleteLater);
+        if (old->isFinished())
+            old->deleteLater();
+    }
 
     ++m_rebuildToken;
     const int token = m_rebuildToken;
@@ -538,45 +594,44 @@ void PdfPreviewModel::startAsyncRebuild()
 
     setLoading(true);
 
-    auto *watcher = static_cast<QFutureWatcher<PreviewBuildResult> *>(m_buildWatcher);
-    if (!watcher) {
-        watcher = new QFutureWatcher<PreviewBuildResult>(this);
-        m_buildWatcher = watcher;
-        connect(watcher, &QFutureWatcher<PreviewBuildResult>::finished, this, [this]() {
-            auto *activeWatcher = static_cast<QFutureWatcher<PreviewBuildResult> *>(m_buildWatcher);
-            if (!activeWatcher || activeWatcher->isCanceled())
-                return;
+    auto *watcher = new QFutureWatcher<PreviewBuildResult>(this);
+    m_buildWatcher = watcher;
+    connect(watcher, &QFutureWatcher<PreviewBuildResult>::finished, this, [this, watcher, token]() {
+        if (m_buildWatcher == watcher)
+            m_buildWatcher = nullptr;
+        watcher->deleteLater();
 
-            const int token = activeWatcher->property("token").toInt();
-            const PreviewBuildResult built = activeWatcher->result();
+        if (watcher->isCanceled() || token != m_rebuildToken)
+            return;
 
-            QList<PageItem> pages;
-            pages.reserve(built.pages.size());
-            for (const PreviewPageData &src : built.pages) {
-                PageItem page;
-                page.number = src.number;
-                page.imageSource = src.imageSource;
-                page.label = src.label;
-                page.isImage = src.isImage;
-                page.aspectRatio = src.aspectRatio;
-                page.pending = src.pending;
-                pages.append(page);
-            }
+        const PreviewBuildResult built = watcher->result();
 
-            LazyPdfContext lazyPdf;
-            if (built.lazyPdfTotalPages > 0) {
-                lazyPdf.file = built.lazyPdfFile;
-                lazyPdf.cacheDir = built.lazyPdfCacheDir;
-                lazyPdf.prefix = built.lazyPdfPrefix;
-                lazyPdf.generation = built.lazyPdfGeneration;
-                lazyPdf.totalPages = built.lazyPdfTotalPages;
-            }
+        QList<PageItem> pages;
+        pages.reserve(built.pages.size());
+        for (const PreviewPageData &src : built.pages) {
+            PageItem page;
+            page.number = src.number;
+            page.imageSource = src.imageSource;
+            page.label = src.label;
+            page.isImage = src.isImage;
+            page.aspectRatio = src.aspectRatio;
+            page.pending = src.pending;
+            pages.append(page);
+        }
 
-            applyBuildResult(pages, lazyPdf, token);
-        });
-    }
+        LazyPdfContext lazyPdf;
+        if (built.lazyPdfTotalPages > 0) {
+            lazyPdf.file = built.lazyPdfFile;
+            lazyPdf.sourceFile = built.lazyPdfSourceFile;
+            lazyPdf.cacheDir = built.lazyPdfCacheDir;
+            lazyPdf.prefix = built.lazyPdfPrefix;
+            lazyPdf.generation = built.lazyPdfGeneration;
+            lazyPdf.totalPages = built.lazyPdfTotalPages;
+        }
 
-    watcher->setProperty("token", token);
+        applyBuildResult(pages, lazyPdf, token);
+    });
+
     watcher->setFuture(QtConcurrent::run([file, dark, generation]() {
         return buildPreviewPages(file, dark, generation);
     }));
@@ -584,12 +639,21 @@ void PdfPreviewModel::startAsyncRebuild()
 
 void PdfPreviewModel::rebuild()
 {
-    startAsyncRebuild();
+    // Coalesce bursts (add files -> set current file -> paths changed) into a
+    // single background build; slow sources like Word conversion would
+    // otherwise be kicked off several times in a row.
+    if (m_rebuildQueued)
+        return;
+    m_rebuildQueued = true;
+    QTimer::singleShot(0, this, [this]() {
+        m_rebuildQueued = false;
+        startAsyncRebuild();
+    });
 }
 
 void PdfPreviewModel::ensurePagesLoaded(int startPage, int endPage)
 {
-    if (m_lazyPdf.totalPages <= 0 || m_currentFile != m_lazyPdf.file)
+    if (m_lazyPdf.totalPages <= 0 || m_currentFile != m_lazyPdf.sourceFile)
         return;
 
     startPage = qMax(1, startPage);
@@ -636,6 +700,11 @@ void PdfPreviewModel::scheduleLazyBatch(const QList<int> &pageNumbers)
                 return;
 
             const LazyBatchResult result = activeWatcher->result();
+
+            // A rebuild happened while this batch was rendering: drop it.
+            if (result.generation != m_lazyPdf.generation)
+                return;
+
             for (int pageNumber : result.pageNumbers)
                 m_loadingPdfPages.remove(pageNumber);
 
@@ -667,6 +736,7 @@ void PdfPreviewModel::scheduleLazyBatch(const QList<int> &pageNumbers)
     input.pdfFile = m_lazyPdf.file;
     input.cacheDir = m_lazyPdf.cacheDir;
     input.prefix = m_lazyPdf.prefix;
+    input.generation = m_lazyPdf.generation;
     input.pageNumbers = pageNumbers;
 
     lazyWatcher->setFuture(QtConcurrent::run([input]() {

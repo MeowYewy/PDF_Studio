@@ -3,21 +3,17 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import PageCase
 
-Item {
+    Item {
     id: dropdown
     width: 280
     height: contentColumn.height + 16
     visible: opacity > 0.01
     opacity: 0
-    scale: 0.94
     z: 2000
 
-    transformOrigin: Item.TopRight
+    property bool revealed: false
 
     Behavior on opacity {
-        NumberAnimation { duration: Theme.animNormal; easing.type: Easing.OutCubic }
-    }
-    Behavior on scale {
         NumberAnimation { duration: Theme.animNormal; easing.type: Easing.OutCubic }
     }
 
@@ -30,17 +26,40 @@ Item {
         dropdown.x = Math.max(8, pos.x - dropdown.width + anchor.width)
         dropdown.y = pos.y
         dropdown.opacity = 1
-        dropdown.scale = 1
+        dropdown.revealed = true
         dropdown.forceActiveFocus()
     }
 
     function close() {
         dropdown.opacity = 0
-        dropdown.scale = 0.94
+        dropdown.revealed = false
     }
 
-    ShadowCard {
+    // Keep wheel events over the dropdown from scrolling the page behind it.
+    MouseArea {
         anchors.fill: parent
+        acceptedButtons: Qt.NoButton
+        onWheel: function(wheel) { wheel.accepted = true }
+    }
+
+    // Expands downward from the header button, matching the color picker.
+    Item {
+        id: revealClip
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        height: dropdown.revealed ? dropdown.height : 0
+        clip: true
+
+        Behavior on height {
+            NumberAnimation { duration: Theme.animNormal; easing.type: Easing.OutCubic }
+        }
+
+    ShadowCard {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        height: dropdown.height
         radius: Theme.radiusMd
         margins: 0
 
@@ -76,12 +95,6 @@ Item {
                 fontFamily: Theme.cjkFontFamily
                 selected: AppSettings.language === "zh_TW"
                 onTriggered: AppSettings.setLanguage("zh_TW")
-            }
-            MenuOption {
-                label: "Français"
-                fontFamily: Theme.latinFontFamily
-                selected: AppSettings.language === "fr"
-                onTriggered: AppSettings.setLanguage("fr")
             }
             MenuOption {
                 label: "English"
@@ -251,6 +264,7 @@ Item {
                 }
             }
         }
+    }
     }
 
     signal aboutRequested()

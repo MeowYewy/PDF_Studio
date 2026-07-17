@@ -12,6 +12,7 @@ Item {
     property bool showConvertFormat: false
     property bool showCompress: false
     property bool showWatermark: false
+    property bool showPageRange: false
     property bool enableReorder: false
 
     ShadowCard {
@@ -99,6 +100,7 @@ Item {
                     showWatermarkOverlay: pageBase.showWatermark
                     watermarkText: pageActionBar.watermarkText
                     watermarkCount: pageActionBar.watermarkCount
+                    watermarkColor: pageActionBar.watermarkColor
                     previewRotation: pageBase.showRotate ? pageActionBar.optionValue : 0
                 }
             }
@@ -120,6 +122,7 @@ Item {
                 showConvertFormat: pageBase.showConvertFormat
                 showCompress: pageBase.showCompress
                 showWatermark: pageBase.showWatermark
+                showPageRange: pageBase.showPageRange
             }
         }
     }

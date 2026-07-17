@@ -57,6 +57,7 @@ QtObject {
     readonly property real watermarkFontHeightRatio: 0.048
     readonly property real watermarkOpacity: 0.22
     readonly property real watermarkAngle: -35
+    readonly property color watermarkDefaultColor: "#5A5A5A"
 
     readonly property string cjkFontFamily: "Microsoft YaHei"
     readonly property string cjkFontFamilyTW: "Microsoft JhengHei"

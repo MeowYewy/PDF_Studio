@@ -15,6 +15,7 @@ CompactComboBox {
         const _ = AppSettings.languageRevision
         return [
             { label: Theme.tr("formatPdf"), value: 0 },
+            { label: Theme.tr("formatWord"), value: 3 },
             { label: Theme.tr("formatPng"), value: 1 },
             { label: Theme.tr("formatJpeg"), value: 2 }
         ]

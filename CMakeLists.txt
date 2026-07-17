@@ -36,6 +36,7 @@ set(SOURCES
     src/appcontroller.cpp
     src/filelistmodel.cpp
     src/pdfpreviewmodel.cpp
+    src/officeconverter.cpp
     src/officetextextractor.cpp
     src/pdfengine.cpp
     src/pdfpagerenderer.cpp
@@ -50,6 +51,7 @@ set(HEADERS
     src/appcontroller.h
     src/filelistmodel.h
     src/pdfpreviewmodel.h
+    src/officeconverter.h
     src/officetextextractor.h
     src/pdfengine.h
     src/pdfpagerenderer.h
@@ -104,6 +106,7 @@ qt_add_qml_module(PageCase
         qml/components/CompactComboBox.qml
         qml/components/ConvertComboBox.qml
         qml/components/CompressComboBox.qml
+        qml/components/WatermarkColorPicker.qml
         qml/components/WatermarkCountCombo.qml
         qml/components/WatermarkInputField.qml
         qml/components/DragGrip.qml

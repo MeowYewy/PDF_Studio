@@ -23,6 +23,8 @@ Item {
         MouseArea {
             anchors.fill: parent
             onClicked: FilePicker.reject()
+            // Swallow wheel events so the main window behind never scrolls.
+            onWheel: function(wheel) { wheel.accepted = true }
         }
     }
 
@@ -78,11 +80,16 @@ Item {
                     filePanel.blurSearch()
                     pathBar.collapseCrumbs()
                 }
+                // Inner lists sit above this area and keep their own wheel
+                // scrolling; anything else on the card must not leak through.
+                onWheel: function(wheel) { wheel.accepted = true }
             }
 
             ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: 20
+                // Leave room for the split filename preview under the bottom bar.
+                anchors.bottomMargin: bottomBar.splitMode ? 38 : 20
                 spacing: 14
 
                 // Main body: sidebar + file area
@@ -266,6 +273,12 @@ Item {
                             if (searchField.activeFocus)
                                 searchField.focus = false
                             pathBar.blurPath()
+                            if (fileNameField.activeFocus)
+                                fileNameField.focus = false
+                            if (splitBaseField.activeFocus)
+                                splitBaseField.focus = false
+                            if (splitSepField.activeFocus)
+                                splitSepField.focus = false
                         }
 
                         // Toolbar row 1: nav + breadcrumb
@@ -820,28 +833,13 @@ Item {
                 }
 
                 RowLayout {
+                    id: bottomBar
                     Layout.fillWidth: true
                     Layout.preferredHeight: 40
                     spacing: 12
 
-                    TextField {
-                        id: fileNameField
-                        Layout.fillWidth: true
-                        Layout.maximumWidth: 280
-                        visible: FilePicker.mode === "save"
-                        text: FilePicker.fileName
-                        font: Theme.mainFont
-                        color: Theme.text
-                        placeholderText: Theme.tr("pickerFileName")
-                        placeholderTextColor: Theme.textSecondary
-                        onTextChanged: FilePicker.fileName = text
-                        background: Rectangle {
-                            radius: Theme.radiusSm
-                            color: Theme.surfaceAlt
-                            border.color: fileNameField.activeFocus ? Theme.accent : Theme.border
-                            border.width: fileNameField.activeFocus ? 2 : 1
-                        }
-                    }
+                    readonly property bool splitMode: FilePicker.mode === "folder"
+                                                      && FilePicker.exportKind === "split"
 
                     PickerFilterCombo {
                         id: filterCombo
@@ -855,13 +853,193 @@ Item {
                         }
                     }
 
-                    Item { Layout.fillWidth: true }
+                    Item {
+                        Layout.fillWidth: true
+                        visible: !bottomBar.splitMode
+                    }
 
                     Text {
                         visible: FilePicker.mode === "openMulti" && FilePicker.selectedPaths.length > 0
                         text: FilePicker.selectedPaths.length.toString()
                         font: Theme.captionBoldFont
                         color: Theme.accent
+                    }
+
+                    TextField {
+                        id: splitBaseField
+                        visible: bottomBar.splitMode
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 38
+                        text: FilePicker.fileName
+                        font: Theme.mainFont
+                        color: Theme.text
+                        placeholderText: Theme.tr("pickerFileName")
+                        placeholderTextColor: Theme.textSecondary
+                        selectByMouse: true
+                        onTextChanged: FilePicker.fileName = text
+                        Keys.onPressed: function(event) {
+                            if (event.key === Qt.Key_Escape) {
+                                focus = false
+                                event.accepted = true
+                            }
+                        }
+                        background: Item {
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: Theme.radiusSm
+                                color: Theme.surfaceAlt
+                                border.color: Theme.border
+                                border.width: 1
+                            }
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: Theme.radiusSm
+                                color: "transparent"
+                                border.color: Theme.accent
+                                border.width: 2
+                                opacity: splitBaseField.activeFocus ? 1 : 0
+                                Behavior on opacity {
+                                    NumberAnimation {
+                                        duration: Theme.animNormal
+                                        easing.type: Easing.OutCubic
+                                    }
+                                }
+                            }
+                        }
+
+                        // Live preview of the first exported file name.
+                        Text {
+                            anchors.top: parent.bottom
+                            anchors.topMargin: 5
+                            anchors.left: parent.left
+                            anchors.leftMargin: 2
+                            visible: bottomBar.splitMode && text.length > 0
+                            text: {
+                                const n = FilePicker.fileName
+                                const s = FilePicker.splitSeparator
+                                const st = FilePicker.splitNumberStyle
+                                const l = AppSettings.languageRevision
+                                return FilePicker.firstSplitOutputName()
+                            }
+                            font.pixelSize: 12
+                            font.family: Theme.mainFont.family
+                            color: Theme.text
+                            elide: Text.ElideRight
+                            width: parent.width
+                        }
+                    }
+
+                    TextField {
+                        id: splitSepField
+                        visible: bottomBar.splitMode
+                        Layout.preferredWidth: 38
+                        Layout.maximumWidth: 38
+                        Layout.preferredHeight: 38
+                        text: FilePicker.splitSeparator
+                        font: Theme.mainFont
+                        color: Theme.text
+                        placeholderText: "_"
+                        placeholderTextColor: Theme.textSecondary
+                        maximumLength: 4
+                        leftPadding: 2
+                        rightPadding: 2
+                        horizontalAlignment: Text.AlignHCenter
+                        selectByMouse: true
+                        onTextChanged: FilePicker.splitSeparator = text
+                        Keys.onPressed: function(event) {
+                            if (event.key === Qt.Key_Escape) {
+                                focus = false
+                                event.accepted = true
+                            }
+                        }
+                        background: Item {
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: Theme.radiusSm
+                                color: Theme.surfaceAlt
+                                border.color: Theme.border
+                                border.width: 1
+                            }
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: Theme.radiusSm
+                                color: "transparent"
+                                border.color: Theme.accent
+                                border.width: 2
+                                opacity: splitSepField.activeFocus ? 1 : 0
+                                Behavior on opacity {
+                                    NumberAnimation {
+                                        duration: Theme.animNormal
+                                        easing.type: Easing.OutCubic
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    PickerFilterCombo {
+                        id: splitNumCombo
+                        compact: true
+                        visible: bottomBar.splitMode
+                        Layout.preferredWidth: 38
+                        Layout.preferredHeight: 38
+                        readonly property var styleOptions: {
+                            const _ = AppSettings.languageRevision
+                            return [
+                                { label: "1", value: 0 },
+                                { label: Theme.tr("splitNumLower"), value: 1 },
+                                { label: Theme.tr("splitNumUpper"), value: 2 }
+                            ]
+                        }
+                        model: styleOptions
+                        onActivated: function(index) {
+                            filePanel.blurSearch()
+                            FilePicker.splitNumberStyle = styleOptions[index].value
+                        }
+                    }
+
+                    TextField {
+                        id: fileNameField
+                        visible: FilePicker.mode === "save"
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 240
+                        Layout.preferredHeight: 38
+                        text: FilePicker.fileName
+                        font: Theme.mainFont
+                        color: Theme.text
+                        placeholderText: Theme.tr("pickerFileName")
+                        placeholderTextColor: Theme.textSecondary
+                        selectByMouse: true
+                        onTextChanged: FilePicker.fileName = text
+                        Keys.onPressed: function(event) {
+                            if (event.key === Qt.Key_Escape) {
+                                focus = false
+                                event.accepted = true
+                            }
+                        }
+                        background: Item {
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: Theme.radiusSm
+                                color: Theme.surfaceAlt
+                                border.color: Theme.border
+                                border.width: 1
+                            }
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: Theme.radiusSm
+                                color: "transparent"
+                                border.color: Theme.accent
+                                border.width: 2
+                                opacity: fileNameField.activeFocus ? 1 : 0
+                                Behavior on opacity {
+                                    NumberAnimation {
+                                        duration: Theme.animNormal
+                                        easing.type: Easing.OutCubic
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     StyledButton {
@@ -904,60 +1082,6 @@ Item {
                         }
                     }
                     filePanel.commitRename()
-                }
-            }
-        }
-    }
-
-    Popup {
-        id: overwritePopup
-        parent: dialogLayer
-        z: 7000
-        modal: true
-        dim: true
-        padding: 20
-        width: 360
-        x: (parent.width - width) / 2
-        y: (parent.height - height) / 2
-        visible: FilePicker.overwritePrompt
-
-        background: Rectangle {
-            radius: Theme.radiusMd
-            color: Theme.surface
-            border.color: Theme.border
-            border.width: 1
-        }
-
-        contentItem: ColumnLayout {
-            spacing: 14
-
-            Text {
-                Layout.fillWidth: true
-                text: Theme.tr("pickerOverwriteTitle")
-                font: Theme.mainFontBold
-                color: Theme.text
-            }
-
-            Text {
-                Layout.fillWidth: true
-                wrapMode: Text.Wrap
-                text: Theme.tr("pickerOverwriteMessage")
-                font: Theme.mainFont
-                color: Theme.textBody
-            }
-
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 8
-                Item { Layout.fillWidth: true }
-                StyledButton {
-                    text: Theme.tr("pickerCancel")
-                    onClicked: FilePicker.cancelOverwrite()
-                }
-                StyledButton {
-                    text: Theme.tr("pickerSave")
-                    highlighted: true
-                    onClicked: FilePicker.confirmOverwrite()
                 }
             }
         }
@@ -1354,6 +1478,7 @@ Item {
         }
 
         onClosed: {
+            FilePicker.clearNameConflict()
             if (filePanel.creatingFolder) {
                 Qt.callLater(function() {
                     newFolderField.forceActiveFocus()
@@ -1412,6 +1537,9 @@ Item {
         function onShownChanged() {
             if (FilePicker.shown) {
                 fileNameField.text = FilePicker.fileName
+                splitBaseField.text = FilePicker.fileName
+                splitSepField.text = FilePicker.splitSeparator
+                splitNumCombo.currentIndex = FilePicker.splitNumberStyle
                 hiddenSwitch.checked = FilePicker.showHidden
                 searchField.text = FilePicker.searchQuery
                 filterCombo.currentIndex = FilePicker.filterIndex
@@ -1454,6 +1582,21 @@ Item {
         function onFileNameChanged() {
             if (fileNameField.text !== FilePicker.fileName)
                 fileNameField.text = FilePicker.fileName
+            if (splitBaseField.text !== FilePicker.fileName)
+                splitBaseField.text = FilePicker.fileName
+        }
+        function onSplitOptionsChanged() {
+            splitSepField.text = FilePicker.splitSeparator
+            splitNumCombo.currentIndex = FilePicker.splitNumberStyle
+        }
+        function onNameConflictPromptChanged() {
+            if (!FilePicker.nameConflictPrompt)
+                return
+            folderExistsPopup.messageKey = FilePicker.mode === "save"
+                    || FilePicker.exportKind === "split"
+                ? "pickerFileExistsMessage"
+                : "pickerFolderExistsMessage"
+            folderExistsPopup.open()
         }
         function onFilterIndexChanged() {
             if (filterCombo.currentIndex !== FilePicker.filterIndex)

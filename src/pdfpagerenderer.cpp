@@ -182,9 +182,18 @@ QStringList PdfPageRenderer::renderPdfPages(const QString &pdfPath, const QStrin
         const int count = doc.pageCount();
         const int last = qMin(endIndex, count);
 
+        // Render from the already-loaded document; reloading it per page made
+        // large files extremely slow.
         for (int page = startIndex; page <= last; ++page) {
             const int i = page - 1;
-            const QImage image = renderPageWithQt(pdfPath, i, dpi);
+            const QSizeF pageSize = doc.pagePointSize(i);
+            if (pageSize.isEmpty())
+                continue;
+
+            const qreal scale = dpi / 72.0;
+            const QSize imageSize(qMax(1, int(pageSize.width() * scale)),
+                                  qMax(1, int(pageSize.height() * scale)));
+            const QImage image = doc.render(i, imageSize);
             if (image.isNull())
                 continue;
 
@@ -204,10 +213,19 @@ QStringList PdfPageRenderer::renderPdfPages(const QString &pdfPath, const QStrin
 
     QMap<int, QString> outputs;
 
-    for (int page = startIndex; page <= endIndex; ++page) {
-        if (outputs.contains(page))
+    // Render contiguous runs of missing pages in a single pdftoppm call —
+    // one process per page was a major slowdown for large documents.
+    int page = startIndex;
+    while (page <= endIndex) {
+        if (outputs.contains(page)) {
+            ++page;
             continue;
-        runPopplerRange(pdftoppm, pdfPath, outputDir, prefix, dpi, page, page, &outputs);
+        }
+        int runEnd = page;
+        while (runEnd + 1 <= endIndex && !outputs.contains(runEnd + 1))
+            ++runEnd;
+        runPopplerRange(pdftoppm, pdfPath, outputDir, prefix, dpi, page, runEnd, &outputs);
+        page = runEnd + 1;
     }
 
     QStringList paths;

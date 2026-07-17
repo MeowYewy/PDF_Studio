@@ -102,34 +102,66 @@ ComboBox {
 
     popup: Popup {
         id: comboPopup
+        // Positioned above the control before it is ever shown, so the first
+        // open never flashes at the default (below) position.
+        y: -height - 4
         width: control.width
-        padding: 6
+        padding: 0
         modal: false
         dim: false
 
-        onOpened: Qt.callLater(function() {
-            comboPopup.y = -comboPopup.height - 4
-        })
+        property bool reveal: false
+        onAboutToShow: reveal = true
+        onAboutToHide: reveal = false
 
         onClosed: control.focus = false
 
-        background: Rectangle {
-            radius: Theme.radiusSm
-            color: Theme.surface
-            border.color: Theme.border
-            border.width: 1
+        enter: Transition {
+            NumberAnimation {
+                property: "opacity"; from: 0; to: 1
+                duration: Theme.animFast; easing.type: Easing.OutCubic
+            }
+        }
+        exit: Transition {
+            NumberAnimation {
+                property: "opacity"; from: 1; to: 0
+                duration: Theme.animNormal; easing.type: Easing.InCubic
+            }
         }
 
-        contentItem: ListView {
-            clip: true
-            implicitHeight: Math.min(contentHeight, 180)
-            model: control.popup.visible ? control.delegateModel : null
-            currentIndex: control.highlightedIndex
-            spacing: 2
-            onContentHeightChanged: if (comboPopup.visible)
-                                        Qt.callLater(function() {
-                                            comboPopup.y = -comboPopup.height - 4
-                                        })
+        background: null
+
+        contentItem: Item {
+            implicitHeight: comboList.height + 12
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: comboPopup.reveal ? parent.height : 0
+                radius: Theme.radiusSm
+                color: Theme.surface
+                border.color: Theme.border
+                border.width: 1
+                clip: true
+
+                Behavior on height {
+                    NumberAnimation { duration: Theme.animNormal; easing.type: Easing.OutCubic }
+                }
+
+                ListView {
+                    id: comboList
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.margins: 6
+                    height: Math.min(contentHeight, 180)
+                    clip: true
+                    model: control.popup.visible ? control.delegateModel : null
+                    currentIndex: control.highlightedIndex
+                    spacing: 2
+                }
+            }
         }
     }
 }

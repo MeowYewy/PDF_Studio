@@ -59,7 +59,8 @@ private:
     };
 
     struct LazyPdfContext {
-        QString file;
+        QString file;        // PDF actually rendered (may be a converted copy)
+        QString sourceFile;  // file the user selected
         QString cacheDir;
         QString prefix;
         int generation = 0;
@@ -72,7 +73,7 @@ private:
     void resetLazyPdfState();
     void applyBuildResult(const QList<PageItem> &pages, const LazyPdfContext &lazyPdf, int token);
     void scheduleLazyBatch(const QList<int> &pageNumbers);
-    void cancelBackgroundWork();
+    void cancelBackgroundWork(bool wait = false);
 
     PreviewImageProvider *m_provider = nullptr;
     AppSettings *m_settings = nullptr;
@@ -82,6 +83,7 @@ private:
     int m_cacheGeneration = 0;
     int m_rebuildToken = 0;
     bool m_isLoading = false;
+    bool m_rebuildQueued = false;
     LazyPdfContext m_lazyPdf;
     QSet<int> m_loadingPdfPages;
     QList<int> m_queuedLazyPages;

@@ -2,5 +2,5 @@
   "version": "0.2.2",
   "downloadUrl": "https://github.com/MeowYewy/PageCase/releases/download/v0.2.2/PageCase_0.2.2_win64_Setup.exe",
   "silentInstallArgs": "/SILENT /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS",
-  "releaseNotes": "优化了更新下载逻辑。"
+  "releaseNotes": "优化了运行与更新逻辑；优化了预览效果；新增指定页码导出功能。"
 }

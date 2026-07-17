@@ -1,6 +1,7 @@
 #include "filepicker.h"
 
 #include "appsettings.h"
+#include "pdfengine.h"
 
 #include <QClipboard>
 #include <QDateTime>
@@ -562,16 +563,20 @@ void FilePicker::reloadSaveFilters(const QString &filter)
 void FilePicker::configure(const QString &mode,
                            const QString &startDir,
                            const QString &suggestedName,
-                           const QString &filter)
+                           const QString &filter,
+                           const QString &exportKind)
 {
     m_mode = mode;
+    m_exportKind = exportKind;
+    m_splitSeparator = QStringLiteral("_");
+    m_splitNumberStyle = 0;
+    emit splitOptionsChanged();
     m_accepted = false;
     m_resultPaths.clear();
     m_selectedPaths.clear();
     m_highlightedPath.clear();
     m_anchorPath.clear();
-    m_overwritePrompt = false;
-    m_overwritePath.clear();
+    m_nameConflictPrompt = false;
     setError({});
 
     if (mode == QLatin1String("openMulti") || mode == QLatin1String("openSingle")) {
@@ -590,6 +595,10 @@ void FilePicker::configure(const QString &mode,
         m_filterSpecs.clear();
         m_filters.clear();
         emit filtersChanged();
+        if (exportKind == QLatin1String("split") && !suggestedName.isEmpty()) {
+            m_fileName = suggestedName;
+            emit fileNameChanged();
+        }
     }
 
     QString initial = startDir;
@@ -1304,22 +1313,43 @@ bool FilePicker::createFolder(const QString &name)
     return true;
 }
 
-void FilePicker::confirmOverwrite()
+void FilePicker::setSplitSeparator(const QString &sep)
 {
-    if (!m_overwritePrompt)
+    // Empty is allowed while editing; consumers fall back to the default "_".
+    const QString trimmed = sep.left(4);
+    if (m_splitSeparator == trimmed)
         return;
-    const QString path = m_overwritePath;
-    m_overwritePrompt = false;
-    m_overwritePath.clear();
-    emit overwritePromptChanged();
-    finish(true, {path});
+    m_splitSeparator = trimmed;
+    emit splitOptionsChanged();
 }
 
-void FilePicker::cancelOverwrite()
+void FilePicker::setSplitNumberStyle(int style)
 {
-    m_overwritePrompt = false;
-    m_overwritePath.clear();
-    emit overwritePromptChanged();
+    const int clamped = qBound(0, style, 2);
+    if (m_splitNumberStyle == clamped)
+        return;
+    m_splitNumberStyle = clamped;
+    emit splitOptionsChanged();
+}
+
+void FilePicker::clearNameConflict()
+{
+    if (!m_nameConflictPrompt)
+        return;
+    m_nameConflictPrompt = false;
+    emit nameConflictPromptChanged();
+}
+
+QString FilePicker::firstSplitOutputName() const
+{
+    const QString base = m_fileName.trimmed();
+    if (base.isEmpty())
+        return {};
+    const QString lang = m_settings ? m_settings->language() : QStringLiteral("zh_CN");
+    const QString sep = m_splitSeparator.isEmpty() ? QStringLiteral("_") : m_splitSeparator;
+    return base + sep
+        + PdfEngine::formatSplitPageIndex(1, m_splitNumberStyle, lang)
+        + QStringLiteral(".pdf");
 }
 
 void FilePicker::accept()
@@ -1329,6 +1359,17 @@ void FilePicker::accept()
     if (m_mode == QLatin1String("folder")) {
         if (isDrivesView())
             return;
+        if (m_exportKind == QLatin1String("split")) {
+            if (m_fileName.trimmed().isEmpty())
+                return;
+            const QString firstName = firstSplitOutputName();
+            if (!firstName.isEmpty()
+                && QFileInfo::exists(QDir(m_currentPath).filePath(firstName))) {
+                m_nameConflictPrompt = true;
+                emit nameConflictPromptChanged();
+                return;
+            }
+        }
         finish(true, {m_currentPath});
         return;
     }
@@ -1338,9 +1379,8 @@ void FilePicker::accept()
         if (path.isEmpty())
             return;
         if (QFileInfo::exists(path)) {
-            m_overwritePrompt = true;
-            m_overwritePath = path;
-            emit overwritePromptChanged();
+            m_nameConflictPrompt = true;
+            emit nameConflictPromptChanged();
             return;
         }
         finish(true, {path});
@@ -1369,9 +1409,8 @@ void FilePicker::finish(bool accepted, const QStringList &paths)
 {
     m_accepted = accepted;
     m_resultPaths = accepted ? paths : QStringList{};
-    m_overwritePrompt = false;
-    m_overwritePath.clear();
-    emit overwritePromptChanged();
+    m_nameConflictPrompt = false;
+    emit nameConflictPromptChanged();
     setShown(false);
     emit closed(accepted);
 }
@@ -1379,12 +1418,13 @@ void FilePicker::finish(bool accepted, const QStringList &paths)
 bool FilePicker::openSync(const QString &mode,
                           const QString &startDir,
                           const QString &suggestedName,
-                          const QString &filter)
+                          const QString &filter,
+                          const QString &exportKind)
 {
     if (m_shown)
         reject();
 
-    configure(mode, startDir, suggestedName, filter);
+    configure(mode, startDir, suggestedName, filter, exportKind);
     m_accepted = false;
     m_resultPaths.clear();
 

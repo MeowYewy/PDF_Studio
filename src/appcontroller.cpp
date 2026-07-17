@@ -4,22 +4,27 @@
 
 #include "pdfpreviewmodel.h"
 
+#include "officeconverter.h"
 #include "previewimageprovider.h"
 #include "watermarklayout.h"
 
 
 
 #include <QAbstractItemModel>
-
+#include <QColor>
 #include <QCoreApplication>
 
 #include "filepicker.h"
 
 #include <QFileInfo>
 
+#include <QFutureWatcher>
 #include <QStandardPaths>
 #include <QTimer>
 #include <QUrl>
+#include <QtConcurrent/QtConcurrentRun>
+
+#include <functional>
 
 
 
@@ -46,6 +51,8 @@ AppController::AppController(PreviewImageProvider *imageProvider, AppSettings *s
     connect(&m_files, &FileListModel::filesChanged, this, [this]() {
 
         m_preview.rebuildFromPaths(m_files.paths());
+
+        pruneStalePageRanges();
 
         emit fileCountChanged();
 
@@ -213,11 +220,12 @@ void AppController::addFiles(const QStringList &paths)
 
 QStringList AppController::pickPathsSync(const QString &mode,
                                          const QString &suggested,
-                                         const QString &filter)
+                                         const QString &filter,
+                                         const QString &exportKind)
 {
     if (!m_filePicker)
         return {};
-    if (!m_filePicker->openSync(mode, defaultDialogDir(), suggested, filter))
+    if (!m_filePicker->openSync(mode, defaultDialogDir(), suggested, filter, exportKind))
         return {};
     return m_filePicker->resultPaths();
 }
@@ -242,12 +250,73 @@ void AppController::clearFiles()
     m_files.clear();
     m_preview.setCurrentFile({});
     setStatus({});
+    if (!m_pageRanges.isEmpty()) {
+        m_pageRanges.clear();
+        emit pageRangesChanged();
+    }
     emit fileCountChanged();
 }
 
 void AppController::removeFileAt(int index)
 {
+    const QString path = filePathAt(index);
     m_files.removeAt(index);
+    if (!path.isEmpty() && m_pageRanges.remove(path) > 0)
+        emit pageRangesChanged();
+}
+
+QVariantMap AppController::pageRanges() const
+{
+    QVariantMap map;
+    for (auto it = m_pageRanges.cbegin(); it != m_pageRanges.cend(); ++it)
+        map.insert(it.key(), it.value());
+    return map;
+}
+
+bool AppController::anyPageRangeSet() const
+{
+    for (auto it = m_pageRanges.cbegin(); it != m_pageRanges.cend(); ++it) {
+        if (!it.value().trimmed().isEmpty())
+            return true;
+    }
+    return false;
+}
+
+void AppController::setPageRange(const QString &path, const QString &text)
+{
+    if (path.isEmpty())
+        return;
+
+    const QString trimmed = text.trimmed();
+    if (m_pageRanges.value(path) == trimmed)
+        return;
+
+    if (trimmed.isEmpty())
+        m_pageRanges.remove(path);
+    else
+        m_pageRanges.insert(path, trimmed);
+    emit pageRangesChanged();
+}
+
+QString AppController::pageRange(const QString &path) const
+{
+    return m_pageRanges.value(path);
+}
+
+void AppController::pruneStalePageRanges()
+{
+    const QStringList paths = m_files.paths();
+    bool changed = false;
+    for (auto it = m_pageRanges.begin(); it != m_pageRanges.end();) {
+        if (!paths.contains(it.key())) {
+            it = m_pageRanges.erase(it);
+            changed = true;
+        } else {
+            ++it;
+        }
+    }
+    if (changed)
+        emit pageRangesChanged();
 }
 
 void AppController::selectPreviewFile(const QString &path)
@@ -324,9 +393,11 @@ QString AppController::browseOutputFile(const QString &suggested, const QString 
     return paths.isEmpty() ? QString() : paths.first();
 }
 
-QString AppController::browseOutputDir()
+QString AppController::browseOutputDir(const QString &suggestedBase,
+                                       const QString &exportKind)
 {
-    const QStringList paths = pickPathsSync(QStringLiteral("folder"));
+    const QStringList paths = pickPathsSync(QStringLiteral("folder"), suggestedBase, {},
+                                            exportKind);
     return paths.isEmpty() ? QString() : paths.first();
 }
 
@@ -363,293 +434,275 @@ QVariantList AppController::watermarkLayoutItems(const QString &text, int count,
 
 
 
-void AppController::runCurrentAction(int optionValue, const QString &extraText)
+namespace {
 
+// PDF-only operations accept Word documents too: they are converted to a
+// cached PDF first (same cache the preview uses). Anything else fails with a
+// localized message instead of raw qpdf noise.
+QString resolveToPdf(const QString &path, const QString &needPdfMsg, QString *error)
 {
+    if (QFileInfo(path).suffix().compare(QLatin1String("pdf"), Qt::CaseInsensitive) == 0)
+        return path;
 
-    if (m_busy)
-
-        return;
-
-
-
-    const QStringList paths = m_files.paths();
-
-    if (paths.isEmpty()) {
-
-        setStatus(QStringLiteral("No files"));
-
-        emit actionFinished(false, QStringLiteral("No files"));
-
-        return;
-
+    if (OfficeConverter::isWordDocument(path)) {
+        QString convertError;
+        const QString pdf = OfficeConverter::toPdfCached(path, &convertError);
+        if (pdf.isEmpty() && error)
+            *error = convertError;
+        return pdf;
     }
 
+    if (error)
+        *error = needPdfMsg;
+    return {};
+}
 
+} // namespace
 
-    setBusy(true);
+void AppController::runCurrentAction(int optionValue, const QString &extraText,
+                                     const QString &extraColor)
+{
+    if (m_busy)
+        return;
 
-    setProgress(0.08);
+    const QStringList paths = m_files.paths();
+    if (paths.isEmpty()) {
+        setStatus(QStringLiteral("No files"));
+        emit actionFinished(false, QStringLiteral("No files"));
+        return;
+    }
 
-    QString error;
+    const auto fail = [this](const QString &message) {
+        setStatus(message);
+        emit actionFinished(false, message);
+    };
 
+    const QString invalidRangeMsg = m_settings
+        ? m_settings->trKey(QStringLiteral("pageRangeInvalid"))
+        : QStringLiteral("Invalid page range");
+
+    const QString needPdfMsg = m_settings
+        ? m_settings->trKey(QStringLiteral("needPdf"))
+        : QStringLiteral("This file type is not supported for this operation");
+
+    std::function<QString()> task;
     QString outputPath;
-
-
+    QString watermarkText;
 
     switch (m_currentTab) {
 
     case 0: {
-
-        const QString outDir = browseOutputDir();
-
-        if (outDir.isEmpty()) {
-
-            setBusy(false);
-
-            setProgress(0);
-
+        bool rangeOk = true;
+        const QString range = PdfEngine::normalizePageRange(pageRange(paths.first()), &rangeOk);
+        if (!rangeOk) {
+            fail(invalidRangeMsg);
             return;
-
         }
-
-        setProgress(0.35);
-
-        error = m_engine.splitPdf(paths.first(), outDir, true);
-
-        if (error.isEmpty())
-
-            rememberOutput(outDir);
-
+        const QString input = paths.first();
+        const QString defaultBase = QFileInfo(input).completeBaseName();
+        const QString outDir = browseOutputDir(defaultBase, QStringLiteral("split"));
+        if (outDir.isEmpty())
+            return;
+        const QString splitBase = m_filePicker && !m_filePicker->fileName().trimmed().isEmpty()
+            ? m_filePicker->fileName().trimmed()
+            : defaultBase;
+        const QString splitSep = m_filePicker ? m_filePicker->splitSeparator() : QStringLiteral("_");
+        const int splitNumStyle = m_filePicker ? m_filePicker->splitNumberStyle() : 0;
+        const QString splitLang = m_settings ? m_settings->language() : QStringLiteral("zh_CN");
+        outputPath = outDir;
+        task = [this, input, outDir, range, splitBase, splitSep, splitNumStyle, splitLang,
+                needPdfMsg]() {
+            QString resolveError;
+            const QString pdf = resolveToPdf(input, needPdfMsg, &resolveError);
+            if (pdf.isEmpty())
+                return resolveError;
+            return m_engine.splitPdf(pdf, outDir, true, range, splitBase, splitSep,
+                                     splitNumStyle, splitLang);
+        };
         break;
-
     }
 
     case 1: {
-
         if (paths.size() < 2) {
-
-            error = QStringLiteral("Need at least 2 PDF files");
-
-            break;
-
-        }
-
-        const QString out = browseOutputFile(QStringLiteral("merged.pdf"));
-
-        if (out.isEmpty()) {
-
-            setBusy(false);
-
-            setProgress(0);
-
+            fail(QStringLiteral("Need at least 2 PDF files"));
             return;
-
         }
-
-        setProgress(0.35);
-
-        error = m_engine.mergePdfs(paths, out);
-
+        QStringList ranges;
+        ranges.reserve(paths.size());
+        for (const QString &path : paths) {
+            bool rangeOk = true;
+            ranges.append(PdfEngine::normalizePageRange(pageRange(path), &rangeOk));
+            if (!rangeOk) {
+                fail(invalidRangeMsg);
+                return;
+            }
+        }
+        const QString out = browseOutputFile(QStringLiteral("merged.pdf"));
+        if (out.isEmpty())
+            return;
         outputPath = out;
-
+        task = [this, paths, out, ranges, needPdfMsg]() -> QString {
+            QStringList resolved;
+            resolved.reserve(paths.size());
+            for (const QString &path : paths) {
+                QString resolveError;
+                const QString pdf = resolveToPdf(path, needPdfMsg, &resolveError);
+                if (pdf.isEmpty())
+                    return resolveError;
+                resolved.append(pdf);
+            }
+            return m_engine.mergePdfs(resolved, out, ranges);
+        };
         break;
-
     }
 
     case 2: {
-
-        const QString out = browseOutputFile(
-
-            QFileInfo(paths.first()).completeBaseName() + QStringLiteral("_rotated.pdf"));
-
-        if (out.isEmpty()) {
-
-            setBusy(false);
-
-            setProgress(0);
-
+        bool rangeOk = true;
+        const QString range = PdfEngine::normalizePageRange(pageRange(paths.first()), &rangeOk);
+        if (!rangeOk) {
+            fail(invalidRangeMsg);
             return;
-
         }
-
-        setProgress(0.35);
-
-        error = m_engine.rotatePdf(paths.first(), out, optionValue);
-
+        const QString out = browseOutputFile(
+            QFileInfo(paths.first()).completeBaseName() + QStringLiteral("_rotated.pdf"));
+        if (out.isEmpty())
+            return;
+        const QString input = paths.first();
         outputPath = out;
-
+        task = [this, input, out, optionValue, range, needPdfMsg]() {
+            QString resolveError;
+            const QString pdf = resolveToPdf(input, needPdfMsg, &resolveError);
+            if (pdf.isEmpty())
+                return resolveError;
+            return m_engine.rotatePdf(pdf, out, optionValue, range);
+        };
         break;
-
     }
 
     case 3: {
-
         if (optionValue == 0) {
-
             const QString out = browseOutputFile(QStringLiteral("converted.pdf"));
-
-            if (out.isEmpty()) {
-
-                setBusy(false);
-
-                setProgress(0);
-
+            if (out.isEmpty())
                 return;
-
-            }
-
-            setProgress(0.35);
-
-            error = m_engine.convertToPdf(paths, out);
-
             outputPath = out;
-
-        } else {
-
-            const QString format = optionValue == 1 ? QStringLiteral("png")
-
-                                                    : QStringLiteral("jpeg");
-
-            const QString outDir = browseOutputDir();
-
-            if (outDir.isEmpty()) {
-
-                setBusy(false);
-
-                setProgress(0);
-
+            task = [this, paths, out]() {
+                return m_engine.convertToPdf(paths, out);
+            };
+        } else if (optionValue == 3) {
+            const QString out = browseOutputFile(
+                QFileInfo(paths.first()).completeBaseName() + QStringLiteral(".docx"));
+            if (out.isEmpty())
                 return;
-
-            }
-
-            setProgress(0.35);
-
-            error = m_engine.exportPdfAsImages(paths.first(), outDir, format);
-
-            if (error.isEmpty())
-
-                rememberOutput(outDir);
-
+            const QString input = paths.first();
+            outputPath = out;
+            task = [this, input, out]() {
+                return m_engine.convertPdfToWord(input, out);
+            };
+        } else {
+            const QString format = optionValue == 1 ? QStringLiteral("png")
+                                                    : QStringLiteral("jpeg");
+            const QString outDir = browseOutputDir();
+            if (outDir.isEmpty())
+                return;
+            const QString input = paths.first();
+            const QString baseName = QFileInfo(input).completeBaseName();
+            outputPath = outDir;
+            task = [this, input, outDir, format, baseName, needPdfMsg]() {
+                QString resolveError;
+                const QString pdf = resolveToPdf(input, needPdfMsg, &resolveError);
+                if (pdf.isEmpty())
+                    return resolveError;
+                return m_engine.exportPdfAsImages(pdf, outDir, format, baseName);
+            };
         }
-
         break;
-
     }
 
     case 4: {
-
         const QString out = browseOutputFile(
-
             QFileInfo(paths.first()).completeBaseName() + QStringLiteral("_compressed.pdf"));
-
-        if (out.isEmpty()) {
-
-            setBusy(false);
-
-            setProgress(0);
-
+        if (out.isEmpty())
             return;
-
-        }
-
-        setProgress(0.35);
-
-        error = m_engine.compressPdf(paths.first(), out, optionValue);
-
+        const QString input = paths.first();
         outputPath = out;
-
+        task = [this, input, out, optionValue, needPdfMsg]() {
+            QString resolveError;
+            const QString pdf = resolveToPdf(input, needPdfMsg, &resolveError);
+            if (pdf.isEmpty())
+                return resolveError;
+            return m_engine.compressPdf(pdf, out, optionValue);
+        };
         break;
-
     }
 
     case 5: {
-
         const QString text = extraText.trimmed();
-
         if (text.isEmpty()) {
-
-            error = QStringLiteral("Watermark text is required");
-
-            break;
-
-        }
-
-        const QString out = browseOutputFile(
-
-            QFileInfo(paths.first()).completeBaseName() + QStringLiteral("_watermarked.pdf"));
-
-        if (out.isEmpty()) {
-
-            setBusy(false);
-
-            setProgress(0);
-
+            fail(QStringLiteral("Watermark text is required"));
             return;
-
         }
-
-        setProgress(0.35);
-
-        error = m_engine.watermarkPdf(paths.first(), out, text, optionValue);
-
+        const QString out = browseOutputFile(
+            QFileInfo(paths.first()).completeBaseName() + QStringLiteral("_watermarked.pdf"));
+        if (out.isEmpty())
+            return;
+        const QString input = paths.first();
         outputPath = out;
-
-        if (error.isEmpty() && m_settings)
-            m_settings->addWatermarkHistory(text);
-
+        watermarkText = text;
+        QColor wmColor(extraColor);
+        if (!wmColor.isValid())
+            wmColor = QColor(90, 90, 90);
+        task = [this, input, out, text, optionValue, wmColor, needPdfMsg]() {
+            QString resolveError;
+            const QString pdf = resolveToPdf(input, needPdfMsg, &resolveError);
+            if (pdf.isEmpty())
+                return resolveError;
+            return m_engine.watermarkPdf(pdf, out, text, optionValue, wmColor);
+        };
         break;
-
     }
 
     default:
-
-        break;
-
+        return;
     }
 
+    if (!task)
+        return;
 
+    setBusy(true);
+    setProgress(0.35);
 
-    setProgress(error.isEmpty() ? 1.0 : 0.0);
+    // Heavy work runs on a worker thread so the UI stays responsive.
+    auto *watcher = new QFutureWatcher<QString>(this);
+    connect(watcher, &QFutureWatcher<QString>::finished, this,
+            [this, watcher, outputPath, watermarkText]() {
+        const QString error = watcher->result();
+        watcher->deleteLater();
 
-    setBusy(false);
+        setProgress(error.isEmpty() ? 1.0 : 0.0);
+        setBusy(false);
 
+        if (error.isEmpty()) {
+            if (!outputPath.isEmpty())
+                rememberOutput(outputPath);
+            if (!watermarkText.isEmpty() && m_settings)
+                m_settings->addWatermarkHistory(watermarkText);
+            const QString okMsg = m_settings
+                ? m_settings->trKey(QStringLiteral("success"))
+                : QStringLiteral("OK");
+            setStatus(okMsg);
+            emit actionFinished(true, okMsg);
+        } else {
+            setStatus(error);
+            emit actionFinished(false, error);
+        }
 
-
-    if (error.isEmpty()) {
-
-        if (!outputPath.isEmpty())
-
-            rememberOutput(outputPath);
-
-        const QString okMsg = m_settings
-
-            ? m_settings->trKey(QStringLiteral("success"))
-
-            : QStringLiteral("OK");
-
-        setStatus(okMsg);
-
-        emit actionFinished(true, okMsg);
-
-    } else {
-
-        setStatus(error);
-
-        emit actionFinished(false, error);
-
-    }
-
-
-
-    QTimer::singleShot(600, this, [this]() {
-
-        if (!m_busy)
-
-            setProgress(0);
-
+        QTimer::singleShot(600, this, [this]() {
+            if (!m_busy)
+                setProgress(0);
+        });
     });
 
+    watcher->setFuture(QtConcurrent::run(task));
 }
 
 

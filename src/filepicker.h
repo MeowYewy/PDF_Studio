@@ -28,8 +28,10 @@ class FilePicker : public QObject
     Q_PROPERTY(bool acceptEnabled READ acceptEnabled NOTIFY selectionChanged)
     Q_PROPERTY(QString acceptLabel READ acceptLabel NOTIFY stateChanged)
     Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY errorMessageChanged)
-    Q_PROPERTY(bool overwritePrompt READ overwritePrompt NOTIFY overwritePromptChanged)
-    Q_PROPERTY(QString overwritePath READ overwritePath NOTIFY overwritePromptChanged)
+    Q_PROPERTY(bool nameConflictPrompt READ nameConflictPrompt NOTIFY nameConflictPromptChanged)
+    Q_PROPERTY(QString exportKind READ exportKind NOTIFY stateChanged)
+    Q_PROPERTY(QString splitSeparator READ splitSeparator WRITE setSplitSeparator NOTIFY splitOptionsChanged)
+    Q_PROPERTY(int splitNumberStyle READ splitNumberStyle WRITE setSplitNumberStyle NOTIFY splitOptionsChanged)
     Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
     Q_PROPERTY(bool recentFilterActive READ recentFilterActive NOTIFY filterIndexChanged)
     Q_PROPERTY(bool clipboardHasFiles READ clipboardHasFiles NOTIFY clipboardChanged)
@@ -56,8 +58,10 @@ public:
     bool acceptEnabled() const;
     QString acceptLabel() const;
     QString errorMessage() const { return m_errorMessage; }
-    bool overwritePrompt() const { return m_overwritePrompt; }
-    QString overwritePath() const { return m_overwritePath; }
+    bool nameConflictPrompt() const { return m_nameConflictPrompt; }
+    QString exportKind() const { return m_exportKind; }
+    QString splitSeparator() const { return m_splitSeparator; }
+    int splitNumberStyle() const { return m_splitNumberStyle; }
     bool loading() const { return m_loading; }
     bool recentFilterActive() const { return isRecentFilterActive(); }
 
@@ -88,13 +92,16 @@ public:
     Q_INVOKABLE int indexOfPath(const QString &path) const;
     Q_INVOKABLE void accept();
     Q_INVOKABLE void reject();
-    Q_INVOKABLE void confirmOverwrite();
-    Q_INVOKABLE void cancelOverwrite();
+    void setSplitSeparator(const QString &sep);
+    void setSplitNumberStyle(int style);
+    Q_INVOKABLE QString firstSplitOutputName() const;
+    Q_INVOKABLE void clearNameConflict();
 
     bool openSync(const QString &mode,
                   const QString &startDir,
                   const QString &suggestedName = {},
-                  const QString &filter = {});
+                  const QString &filter = {},
+                  const QString &exportKind = {});
 
 signals:
     void shownChanged();
@@ -108,7 +115,8 @@ signals:
     void showHiddenChanged();
     void searchQueryChanged();
     void errorMessageChanged();
-    void overwritePromptChanged();
+    void nameConflictPromptChanged();
+    void splitOptionsChanged();
     void languageChanged();
     void loadingChanged();
     void clipboardChanged();
@@ -131,7 +139,8 @@ private:
     void configure(const QString &mode,
                    const QString &startDir,
                    const QString &suggestedName,
-                   const QString &filter);
+                   const QString &filter,
+                   const QString &exportKind = {});
     void reloadEntries();
     void scheduleReload();
     void syncSelectionFlags();
@@ -162,8 +171,10 @@ private:
     QString m_fileName;
     QString m_errorMessage;
     bool m_showHidden = false;
-    bool m_overwritePrompt = false;
-    QString m_overwritePath;
+    bool m_nameConflictPrompt = false;
+    QString m_exportKind;
+    QString m_splitSeparator = QStringLiteral("_");
+    int m_splitNumberStyle = 0;
     int m_filterIndex = 0;
     QList<FilterSpec> m_filterSpecs;
     QVariantList m_filters;

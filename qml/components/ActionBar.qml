@@ -14,9 +14,11 @@ RowLayout {
     property bool showConvertFormat: false
     property bool showCompress: false
     property bool showWatermark: false
+    property bool showPageRange: false
     property int optionValue: 90
     property int watermarkCount: 1
     property string watermarkText: ""
+    property string watermarkColor: Theme.watermarkDefaultColor
 
     Text {
         Layout.fillWidth: true
@@ -34,10 +36,20 @@ RowLayout {
         spacing: 10
         Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
 
+        WatermarkColorPicker {
+            id: colorPicker
+            visible: actionBar.showWatermark
+            Layout.preferredWidth: 38
+            Layout.preferredHeight: 38
+            onColorValueChanged: actionBar.watermarkColor = colorPicker.colorValue
+        }
+
         WatermarkCountCombo {
             id: countPicker
             visible: actionBar.showWatermark
-            Layout.preferredWidth: actionBar.controlWidth
+            compact: true
+            Layout.preferredWidth: 38
+            Layout.preferredHeight: 38
             onCountValueChanged: actionBar.watermarkCount = countPicker.countValue
         }
 
@@ -65,6 +77,62 @@ RowLayout {
             onFormatValueChanged: actionBar.optionValue = formatPicker.formatValue
         }
 
+        TextField {
+            id: pageRangeField
+            visible: actionBar.showPageRange
+            enabled: AppController.fileCount > 0 && !AppController.busy
+            Layout.preferredWidth: 168
+            Layout.preferredHeight: 38
+            placeholderText: "2,3,5 ; 1-5 ; 1~5 ;"
+            font: Theme.mainFont
+            color: Theme.text
+            placeholderTextColor: Theme.textSecondary
+            maximumLength: 64
+            selectByMouse: true
+
+            // The field always edits the page range of the file currently
+            // shown in the preview.
+            readonly property string boundPath: AppController.preview.currentFile
+            onBoundPathChanged: text = AppController.pageRange(boundPath)
+            Component.onCompleted: text = AppController.pageRange(boundPath)
+            onTextEdited: AppController.setPageRange(boundPath, text)
+
+            Keys.onPressed: function(event) {
+                if (event.key === Qt.Key_Escape) {
+                    focus = false
+                    event.accepted = true
+                }
+            }
+
+            // Same styling as the file picker search box: static base border
+            // with an accent overlay that fades in/out on focus.
+            background: Item {
+                Rectangle {
+                    anchors.fill: parent
+                    radius: Theme.radiusSm
+                    color: Theme.surfaceAlt
+                    border.color: Theme.border
+                    border.width: 1
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: Theme.radiusSm
+                    color: "transparent"
+                    border.color: Theme.accent
+                    border.width: 2
+                    opacity: pageRangeField.activeFocus ? 1 : 0
+
+                    Behavior on opacity {
+                        NumberAnimation {
+                            duration: Theme.animNormal
+                            easing.type: Easing.OutCubic
+                        }
+                    }
+                }
+            }
+        }
+
         RotateComboBox {
             id: anglePicker
             visible: actionBar.showRotate
@@ -87,7 +155,8 @@ RowLayout {
                      && (!actionBar.showWatermark || actionBar.watermarkText.trim().length > 0)
             onClicked: {
                 if (actionBar.showWatermark)
-                    AppController.runCurrentAction(actionBar.watermarkCount, actionBar.watermarkText)
+                    AppController.runCurrentAction(actionBar.watermarkCount, actionBar.watermarkText,
+                                                  actionBar.watermarkColor)
                 else
                     AppController.runCurrentAction(actionBar.optionValue, "")
             }

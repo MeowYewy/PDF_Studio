@@ -10,7 +10,7 @@
 |------|------|
 | **版本** | v0.2.2 |
 | **平台** | Windows 10 / 11，64 位 |
-| **语言** | 简体中文 · 繁體中文 · English · Français |
+| **语言** | 简体中文 · 繁體中文 · English |
 | **主题** | 浅色 / 深色 |
 | **作者** | [MeowYewy](https://github.com/MeowYewy) |
 

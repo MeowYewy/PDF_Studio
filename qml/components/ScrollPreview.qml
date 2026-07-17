@@ -10,6 +10,7 @@ Item {
     property bool showWatermarkOverlay: false
     property string watermarkText: ""
     property int watermarkCount: 1
+    property string watermarkColor: Theme.watermarkDefaultColor
     property int previewRotation: 0
 
     function fittedPreviewSize(slotW, slotH, aspect, rotation) {
@@ -173,9 +174,12 @@ Item {
                     anchors.fill: parent
                     clip: true
                     spacing: 14
-                    model: AppController.previewPages
-                    opacity: AppController.previewPages.length > 0 ? 1 : 0
+                    // Bind the C++ model directly: page updates only refresh
+                    // their own delegate instead of rebuilding the whole list.
+                    model: AppController.preview
+                    opacity: AppController.preview.pageCount > 0 ? 1 : 0
                     enabled: opacity > 0
+                    reuseItems: true
                     ScrollBar.vertical: ScrollBar {
                         policy: ScrollBar.AsNeeded
                     }
@@ -185,8 +189,13 @@ Item {
                     onCountChanged: Qt.callLater(previewPanel.requestVisiblePages)
 
                     delegate: Item {
-                        required property var modelData
+                        id: pageDelegate
+
                         required property int index
+                        required property string source
+                        required property string label
+                        required property real aspectRatio
+                        required property bool pending
 
                         width: previewList.width
                         height: previewPanel.pageSlotHeight + 28
@@ -206,7 +215,7 @@ Item {
                                 clip: true
 
                                 readonly property real pageAspect:
-                                    modelData.aspectRatio > 0 ? modelData.aspectRatio : 0.707
+                                    pageDelegate.aspectRatio > 0 ? pageDelegate.aspectRatio : 0.707
                                 readonly property var fitSize: previewPanel.fittedPreviewSize(
                                     width, height, pageAspect, previewPanel.previewRotation)
 
@@ -215,7 +224,7 @@ Item {
                                     anchors.centerIn: parent
                                     width: slot.fitSize.width
                                     height: slot.fitSize.height
-                                    visible: !modelData.pending && (modelData.source || "").length > 0
+                                    visible: !pageDelegate.pending && pageDelegate.source.length > 0
                                     rotation: previewPanel.previewRotation
                                     transformOrigin: Item.Center
                                     clip: true
@@ -234,7 +243,7 @@ Item {
                                     Image {
                                         id: pageImage
                                         anchors.fill: parent
-                                        source: modelData.source || ""
+                                        source: pageDelegate.source
                                         fillMode: Image.PreserveAspectFit
                                         smooth: true
                                         cache: false
@@ -255,7 +264,7 @@ Item {
                                                 8, pageFrame.height * Theme.watermarkFontHeightRatio)
                                             font.family: Theme.uiFontFamily
                                             font.weight: Font.Bold
-                                            color: "#5A5A5A"
+                                            color: previewPanel.watermarkColor
                                             opacity: Theme.watermarkOpacity
                                         }
                                     }
@@ -263,8 +272,8 @@ Item {
 
                                 BusyIndicator {
                                     anchors.centerIn: parent
-                                    running: modelData.pending === true
-                                    visible: modelData.pending === true
+                                    running: pageDelegate.pending
+                                    visible: pageDelegate.pending
                                 }
                             }
                         }
@@ -272,7 +281,7 @@ Item {
                         Text {
                             anchors.horizontalCenter: parent.horizontalCenter
                             anchors.bottom: parent.bottom
-                            text: modelData.label || ""
+                            text: pageDelegate.label
                             color: Theme.textBody
                             font: Theme.captionFont
                         }
@@ -285,7 +294,7 @@ Item {
                     color: Theme.surface
                     border.color: Theme.border
                     border.width: 1
-                    opacity: AppController.previewPages.length === 0
+                    opacity: AppController.preview.pageCount === 0
                              && !AppController.previewLoading ? 1 : 0
                     visible: opacity > 0
 

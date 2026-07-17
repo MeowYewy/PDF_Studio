@@ -3,10 +3,9 @@
     "version": "0.2.2",
     "date": "2026-7-17",
     "notes": {
-      "zh_CN": "优化了更新下载逻辑。",
-      "zh_TW": "優化了更新下載邏輯。",
-      "en": "Improved the update download logic.",
-      "fr": "Logique de téléchargement des mises à jour améliorée."
+      "zh_CN": "优化了运行与更新逻辑；\n优化了预览效果；\n新增指定页码导出功能。",
+      "zh_TW": "優化了執行與更新邏輯；\n優化了預覽效果；\n新增指定頁碼匯出功能。",
+      "en": "Improved runtime and update logic;\nImproved preview quality;\nAdded page-range export."
     }
   },
   {
@@ -15,8 +14,7 @@
     "notes": {
       "zh_CN": "修复了更新残留的问题。",
       "zh_TW": "修復了更新殘留的問題。",
-      "en": "Fixed leftover install entries after update.",
-      "fr": "Correction des résidus d’installation après mise à jour."
+      "en": "Fixed leftover install entries after update."
     }
   },
   {
@@ -25,8 +23,7 @@
     "notes": {
       "zh_CN": "新增风格化文件选择器；\n优化了更新逻辑。",
       "zh_TW": "新增風格化檔案選擇器；\n優化了更新邏輯。",
-      "en": "Added a styled file picker;\nImproved the update flow.",
-      "fr": "Sélecteur de fichiers stylisé ;\nLogique de mise à jour améliorée."
+      "en": "Added a styled file picker;\nImproved the update flow."
     }
   },
   {
@@ -35,8 +32,7 @@
     "notes": {
       "zh_CN": "发布正式版本。",
       "zh_TW": "發布正式版本。",
-      "en": "Initial public release.",
-      "fr": "Version publique initiale."
+      "en": "Initial public release."
     }
   }
 ]

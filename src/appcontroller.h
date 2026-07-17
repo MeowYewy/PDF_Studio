@@ -1,6 +1,8 @@
 #pragma once
 
+#include <QHash>
 #include <QVariantList>
+#include <QVariantMap>
 
 #include "appsettings.h"
 #include "filelistmodel.h"
@@ -26,6 +28,8 @@ class AppController : public QObject
     Q_PROPERTY(bool previewLoading READ previewLoading NOTIFY previewChanged)
     Q_PROPERTY(double progress READ progress NOTIFY progressChanged)
     Q_PROPERTY(bool processing READ processing NOTIFY processingChanged)
+    Q_PROPERTY(QVariantMap pageRanges READ pageRanges NOTIFY pageRangesChanged)
+    Q_PROPERTY(bool anyPageRangeSet READ anyPageRangeSet NOTIFY pageRangesChanged)
 
 public:
     explicit AppController(PreviewImageProvider *imageProvider = nullptr,
@@ -45,6 +49,8 @@ public:
     bool previewLoading() const { return m_preview.isLoading(); }
     double progress() const { return m_progress; }
     bool processing() const { return m_busy; }
+    QVariantMap pageRanges() const;
+    bool anyPageRangeSet() const;
 
     Q_INVOKABLE void setCurrentTab(int tab);
     Q_INVOKABLE void addFiles(const QStringList &paths);
@@ -56,9 +62,13 @@ public:
     Q_INVOKABLE void moveFile(int from, int to);
     Q_INVOKABLE void ensurePreviewPagesLoaded(int startPage, int endPage);
     Q_INVOKABLE QString filePathAt(int index) const;
+    Q_INVOKABLE void setPageRange(const QString &path, const QString &text);
+    Q_INVOKABLE QString pageRange(const QString &path) const;
     Q_INVOKABLE QString browseOutputFile(const QString &suggested, const QString &filter = {});
-    Q_INVOKABLE QString browseOutputDir();
-    Q_INVOKABLE void runCurrentAction(int optionValue = 90, const QString &extraText = {});
+    Q_INVOKABLE QString browseOutputDir(const QString &suggestedBase = {},
+                                        const QString &exportKind = {});
+    Q_INVOKABLE void runCurrentAction(int optionValue = 90, const QString &extraText = {},
+                                      const QString &extraColor = {});
     Q_INVOKABLE QVariantList watermarkLayoutItems(const QString &text, int count,
                                                   qreal pageWidth, qreal pageHeight) const;
 
@@ -72,6 +82,7 @@ signals:
     void processingChanged();
     void requestFileDialog(const QString &mode, const QString &filter);
     void actionFinished(bool ok, const QString &message);
+    void pageRangesChanged();
 
 private:
     void setStatus(const QString &msg);
@@ -82,10 +93,14 @@ private:
     void rememberOutput(const QString &path);
     QStringList pickPathsSync(const QString &mode,
                               const QString &suggested = {},
-                              const QString &filter = {});
+                              const QString &filter = {},
+                              const QString &exportKind = {});
+
+    void pruneStalePageRanges();
 
     FileListModel m_files;
     PdfPreviewModel m_preview;
+    QHash<QString, QString> m_pageRanges;
     PdfEngine m_engine;
     AppSettings *m_settings = nullptr;
     FilePicker *m_filePicker = nullptr;
