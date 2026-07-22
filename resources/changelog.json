@@ -3,9 +3,9 @@
     "version": "0.2.3",
     "date": "2026-7-22",
     "notes": {
-      "zh_CN": "优化了界面的表现效果；\n优化了文件读取的逻辑；\n优化了更新检测的逻辑；\n修复了部分文件类型不支持的问题；\n修复了导出图片格式的文件时比例异常的问题；\n修复了导出图片格式的文件分辨率错误的问题；\n修复了导出时导出的文件数量错误的问题；\n修复了添加或导出文件时路径捕获错误的问题；\n修复了预览模式异常多次激活的问题；\n修复了提示信息错误的问题。",
-      "zh_TW": "優化了界面的表現效果；\n優化了檔案讀取的邏輯；\n優化了更新檢測的邏輯；\n修復了部分檔案類型不支援的問題；\n修復了匯出圖片格式檔案時比例異常的問題；\n修復了匯出圖片格式檔案時解析度錯誤的問題；\n修復了匯出時匯出的檔案數量錯誤的問題；\n修復了新增或匯出檔案時路徑擷取錯誤的問題；\n修復了預覽模式異常多次啟動的問題；\n修復了提示資訊錯誤的問題。",
-      "en": "Improved UI presentation;\nImproved file reading logic;\nImproved update check logic;\nFixed unsupported file types for some operations;\nFixed incorrect aspect ratio when exporting image files;\nFixed incorrect resolution when exporting image files;\nFixed wrong number of output files during export;\nFixed path capture errors when adding or exporting files;\nFixed preview mode being activated multiple times incorrectly;\nFixed incorrect status messages."
+      "zh_CN": "优化了界面的表现效果；\n优化了文件读取的逻辑；\n优化了更新检测的逻辑；\n修复了部分文件类型不支持的问题；\n修复了导出图片格式的文件时比例异常的问题；\n修复了导出图片格式的文件分辨率错误的问题；\n修复了导出的文件数量错误的问题；\n修复了添加或导出文件时路径捕获错误的问题；\n修复了预览模式异常多次激活的问题；\n修复了提示信息错误的问题。",
+      "zh_TW": "優化了界面的表現效果；\n優化了檔案讀取的邏輯；\n優化了更新檢測的邏輯；\n修復了部分檔案類型不支援的問題；\n修復了匯出圖片格式的檔案時比例異常的問題；\n修復了匯出圖片格式的檔案時解析度錯誤的問題；\n修復了匯出的檔案數量錯誤的問題；\n修復了新增或匯出檔案時路徑擷取錯誤的問題；\n修復了預覽模式異常多次啟動的問題；\n修復了提示資訊錯誤的問題。",
+      "en": "Improved UI presentation;\nImproved file reading logic;\nImproved update check logic;\nFixed unsupported file types for some operations;\nFixed incorrect aspect ratio when exporting image files;\nFixed incorrect resolution when exporting image files;\nFixed wrong number of output files during export;\nFixed path capture errors when adding or exporting files;\nFixed preview mode being activated repeatedly;\nFixed incorrect status messages;"
     }
   },
   {
