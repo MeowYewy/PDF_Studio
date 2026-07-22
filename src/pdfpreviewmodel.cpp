@@ -14,6 +14,7 @@
 #include <QFutureWatcher>
 #include <QImage>
 #include <QImageReader>
+#include <QHash>
 #include <QMap>
 #include <QMutex>
 #include <QMutexLocker>
@@ -27,10 +28,22 @@
 #include <algorithm>
 
 namespace {
+
+QString normalizeLocalPath(const QString &path)
+{
+    if (path.isEmpty())
+        return {};
+    QString s = path;
+    if (s.startsWith(QStringLiteral("file:"), Qt::CaseInsensitive))
+        s = QUrl(s).toLocalFile();
+    s = QDir::cleanPath(QDir::fromNativeSeparators(s));
+    return QFileInfo(s).absoluteFilePath();
+}
+
 constexpr int kThumbWidth = 480;
 constexpr int kPreviewDpi = 120;
-constexpr int kInitialPdfPages = 10;
-constexpr int kLazyBatchSize = 4;
+constexpr int kInitialPdfPages = 3;
+constexpr int kLazyBatchSize = 3;
 
 struct PreviewPageData {
     int number = 0;
@@ -198,6 +211,22 @@ int pageNumberFromPopplerPath(const QString &path)
     return ok ? page : 1;
 }
 
+void appendPreviewMessagePage(PreviewBuildResult &result, const QString &currentFile,
+                              bool dark, int cacheGeneration, const QString &message)
+{
+    const QFileInfo info(currentFile);
+    PreviewPageData page;
+    page.number = 1;
+    page.label = info.fileName();
+    page.imageSource = cacheImageFor(
+        currentFile, cacheGeneration, makePlaceholderImage(message, dark), 1);
+    page.isImage = true;
+    if (!page.imageSource.isEmpty()) {
+        page.aspectRatio = aspectRatioForLocalFile(QUrl(page.imageSource).toLocalFile());
+        result.pages.append(page);
+    }
+}
+
 PreviewPageData makePendingPdfPage(int pageNumber)
 {
     PreviewPageData page;
@@ -314,12 +343,19 @@ PreviewBuildResult buildPreviewPages(const QString &currentFile, bool dark, int 
 
     if (ext == QStringLiteral("pdf")) {
         result.pages = buildInitialPdfPages(currentFile, dark, cacheGeneration);
+        if (result.pages.isEmpty()) {
+            const QString hint = QFile::exists(currentFile)
+                ? QStringLiteral("%1\n(无法打开 PDF，文件可能损坏或缺少 Poppler 工具)")
+                      .arg(info.fileName())
+                : QStringLiteral("%1\n(无法找到 PDF 文件)").arg(info.fileName());
+            appendPreviewMessagePage(result, currentFile, dark, cacheGeneration, hint);
+        }
         result.lazyPdfFile = currentFile;
         result.lazyPdfSourceFile = currentFile;
         result.lazyPdfCacheDir = previewCacheDir();
         result.lazyPdfPrefix = cacheKey(currentFile) + QLatin1Char('_') + QString::number(cacheGeneration);
         result.lazyPdfGeneration = cacheGeneration;
-        result.lazyPdfTotalPages = result.pages.size();
+        result.lazyPdfTotalPages = countPdfPages(currentFile);
         return result;
     }
 
@@ -331,18 +367,20 @@ PreviewBuildResult buildPreviewPages(const QString &currentFile, bool dark, int 
         const QString cachedPdf = OfficeConverter::toPdfCached(currentFile, &convertError);
 
         if (!cachedPdf.isEmpty() && QFile::exists(cachedPdf)) {
-            result.pages = buildInitialPdfPages(cachedPdf, dark, cacheGeneration);
-            if (!result.pages.isEmpty()) {
-                result.lazyPdfFile = cachedPdf;
-                result.lazyPdfSourceFile = currentFile;
-                result.lazyPdfCacheDir = previewCacheDir();
-                result.lazyPdfPrefix = cacheKey(cachedPdf) + QLatin1Char('_')
-                    + QString::number(cacheGeneration);
-                result.lazyPdfGeneration = cacheGeneration;
-                result.lazyPdfTotalPages = result.pages.size();
-                return result;
+            const int totalPages = countPdfPages(cachedPdf);
+            if (totalPages > 0) {
+                result.pages = buildInitialPdfPages(cachedPdf, dark, cacheGeneration);
+                if (!result.pages.isEmpty()) {
+                    result.lazyPdfFile = cachedPdf;
+                    result.lazyPdfSourceFile = currentFile;
+                    result.lazyPdfCacheDir = previewCacheDir();
+                    result.lazyPdfPrefix = cacheKey(cachedPdf) + QLatin1Char('_')
+                        + QString::number(cacheGeneration);
+                    result.lazyPdfGeneration = cacheGeneration;
+                    result.lazyPdfTotalPages = totalPages;
+                    return result;
+                }
             }
-            // Unreadable/corrupt cache entry — drop it so the next preview retries.
             QFile::remove(cachedPdf);
         }
         // Conversion failed: fall back to plain-text preview below.
@@ -440,8 +478,60 @@ void PdfPreviewModel::setAppSettings(AppSettings *settings)
     m_settings = settings;
     if (m_settings) {
         connect(m_settings, &AppSettings::themeChanged, this, [this]() {
+            m_previewCache.clear();
             rebuild();
         });
+    }
+}
+
+qint64 PdfPreviewModel::fileMtimeMs(const QString &path)
+{
+    if (path.isEmpty())
+        return 0;
+    return QFileInfo(path).lastModified().toMSecsSinceEpoch();
+}
+
+void PdfPreviewModel::storeCurrentPreviewCache()
+{
+    if (m_currentFile.isEmpty() || m_pages.isEmpty())
+        return;
+
+    CachedFilePreview entry;
+    entry.pages = m_pages;
+    entry.lazyPdf = m_lazyPdf;
+    entry.sourceMtime = fileMtimeMs(m_currentFile);
+    m_previewCache.insert(m_currentFile, entry);
+}
+
+bool PdfPreviewModel::restorePreviewCache(const QString &path)
+{
+    const auto it = m_previewCache.constFind(path);
+    if (it == m_previewCache.cend())
+        return false;
+
+    const CachedFilePreview &cached = it.value();
+    if (cached.pages.isEmpty() || cached.sourceMtime != fileMtimeMs(path))
+        return false;
+
+    cancelBackgroundWork(false);
+
+    beginResetModel();
+    m_pages = cached.pages;
+    endResetModel();
+    resetLazyPdfState();
+    m_lazyPdf = cached.lazyPdf;
+    setLoading(false);
+    emit pageCountChanged();
+    return true;
+}
+
+void PdfPreviewModel::prunePreviewCache(const QStringList &paths)
+{
+    for (auto it = m_previewCache.begin(); it != m_previewCache.end();) {
+        if (!paths.contains(it.key()))
+            it = m_previewCache.erase(it);
+        else
+            ++it;
     }
 }
 
@@ -490,10 +580,31 @@ QHash<int, QByteArray> PdfPreviewModel::roleNames() const
 
 void PdfPreviewModel::setCurrentFile(const QString &path)
 {
-    if (m_currentFile == path)
+    const QString normalized = normalizeLocalPath(path);
+    if (m_currentFile == normalized)
         return;
 
-    m_currentFile = path;
+    storeCurrentPreviewCache();
+
+    m_currentFile = normalized;
+
+    if (normalized.isEmpty()) {
+        cancelBackgroundWork(false);
+        beginResetModel();
+        m_pages.clear();
+        endResetModel();
+        resetLazyPdfState();
+        setLoading(false);
+        emit pageCountChanged();
+        emit currentFileChanged();
+        return;
+    }
+
+    if (restorePreviewCache(normalized)) {
+        emit currentFileChanged();
+        return;
+    }
+
     rebuild();
     emit currentFileChanged();
 }
@@ -501,11 +612,16 @@ void PdfPreviewModel::setCurrentFile(const QString &path)
 void PdfPreviewModel::rebuildFromPaths(const QStringList &paths)
 {
     m_sourcePaths = paths;
+    prunePreviewCache(paths);
+
     if (!m_currentFile.isEmpty() && !paths.contains(m_currentFile))
         m_currentFile.clear();
 
     if (m_currentFile.isEmpty() && !paths.isEmpty())
-        m_currentFile = paths.first();
+        m_currentFile = normalizeLocalPath(paths.first());
+
+    if (!m_currentFile.isEmpty() && restorePreviewCache(m_currentFile))
+        return;
 
     rebuild();
 }
@@ -560,6 +676,8 @@ void PdfPreviewModel::applyBuildResult(const QList<PageItem> &pages, const LazyP
     resetLazyPdfState();
     if (lazyPdf.totalPages > 0)
         m_lazyPdf = lazyPdf;
+
+    storeCurrentPreviewCache();
 }
 
 void PdfPreviewModel::startAsyncRebuild()
@@ -601,8 +719,11 @@ void PdfPreviewModel::startAsyncRebuild()
             m_buildWatcher = nullptr;
         watcher->deleteLater();
 
-        if (watcher->isCanceled() || token != m_rebuildToken)
+        if (watcher->isCanceled() || token != m_rebuildToken) {
+            if (m_buildWatcher == nullptr && !m_rebuildQueued)
+                setLoading(false);
             return;
+        }
 
         const PreviewBuildResult built = watcher->result();
 
@@ -642,12 +763,18 @@ void PdfPreviewModel::rebuild()
     // Coalesce bursts (add files -> set current file -> paths changed) into a
     // single background build; slow sources like Word conversion would
     // otherwise be kicked off several times in a row.
-    if (m_rebuildQueued)
+    if (m_rebuildQueued) {
+        m_rebuildAgain = true;
         return;
+    }
     m_rebuildQueued = true;
     QTimer::singleShot(0, this, [this]() {
         m_rebuildQueued = false;
         startAsyncRebuild();
+        if (m_rebuildAgain) {
+            m_rebuildAgain = false;
+            rebuild();
+        }
     });
 }
 
@@ -729,6 +856,8 @@ void PdfPreviewModel::scheduleLazyBatch(const QList<int> &pageNumbers)
                 m_queuedLazyPages.clear();
                 scheduleLazyBatch(next);
             }
+
+            storeCurrentPreviewCache();
         });
     }
 

@@ -66,7 +66,7 @@ Item {
         const last = Math.min(
             previewList.count - 1,
             Math.ceil((previewList.contentY + previewList.height) / rowHeight))
-        AppController.ensurePreviewPagesLoaded(first + 1, last + 1 + 4)
+        AppController.ensurePreviewPagesLoaded(first + 1, last + 1 + 3)
     }
 
     function refreshStableSlot() {
@@ -246,7 +246,7 @@ Item {
                                         source: pageDelegate.source
                                         fillMode: Image.PreserveAspectFit
                                         smooth: true
-                                        cache: false
+                                        cache: true
                                         asynchronous: true
                                     }
 
@@ -304,7 +304,9 @@ Item {
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
                         wrapMode: Text.Wrap
-                        text: Theme.tr("noFiles")
+                        text: AppController.fileCount > 0
+                              ? Theme.tr("previewLoadFailed")
+                              : Theme.tr("noFiles")
                         color: Theme.textBody
                         font: Theme.mainFont
                     }

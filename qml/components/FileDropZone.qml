@@ -15,6 +15,11 @@ Item {
     function toLocalPath(url) {
         if (!url)
             return ""
+        if (typeof url !== "string" && typeof url.toLocalFile === "function") {
+            const local = url.toLocalFile()
+            if (local.length > 0)
+                return local
+        }
         if (typeof url === "string") {
             let s = url
             if (s.startsWith("file:///"))

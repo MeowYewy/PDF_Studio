@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QAbstractListModel>
+#include <QHash>
 #include <QImage>
 #include <QSet>
 #include <QStringList>
@@ -67,6 +68,12 @@ private:
         int totalPages = 0;
     };
 
+    struct CachedFilePreview {
+        QList<PageItem> pages;
+        LazyPdfContext lazyPdf;
+        qint64 sourceMtime = 0;
+    };
+
     void rebuild();
     void startAsyncRebuild();
     void setLoading(bool loading);
@@ -74,16 +81,22 @@ private:
     void applyBuildResult(const QList<PageItem> &pages, const LazyPdfContext &lazyPdf, int token);
     void scheduleLazyBatch(const QList<int> &pageNumbers);
     void cancelBackgroundWork(bool wait = false);
+    void storeCurrentPreviewCache();
+    bool restorePreviewCache(const QString &path);
+    void prunePreviewCache(const QStringList &paths);
+    static qint64 fileMtimeMs(const QString &path);
 
     PreviewImageProvider *m_provider = nullptr;
     AppSettings *m_settings = nullptr;
     QString m_currentFile;
     QStringList m_sourcePaths;
     QList<PageItem> m_pages;
+    QHash<QString, CachedFilePreview> m_previewCache;
     int m_cacheGeneration = 0;
     int m_rebuildToken = 0;
     bool m_isLoading = false;
     bool m_rebuildQueued = false;
+    bool m_rebuildAgain = false;
     LazyPdfContext m_lazyPdf;
     QSet<int> m_loadingPdfPages;
     QList<int> m_queuedLazyPages;

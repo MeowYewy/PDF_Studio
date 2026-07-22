@@ -204,16 +204,8 @@ void AppController::addFiles(const QStringList &paths)
 
 
     m_files.addFiles(paths);
-
-    m_preview.rebuildFromPaths(m_files.paths());
-
-
-
-    if (!m_files.paths().isEmpty())
-
-        m_preview.setCurrentFile(m_files.paths().first());
-
-
+    // filesChanged already rebuilds preview; avoid duplicate rebuild/setCurrentFile
+    // races when multiple files (e.g. PDF + Word) are dropped together.
 
     setStatus(QStringLiteral("%1 file(s) added").arg(m_files.count()));
 
