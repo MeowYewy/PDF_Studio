@@ -2,5 +2,5 @@
   "version": "0.2.4",
   "downloadUrl": "https://github.com/MeowYewy/PageCase/releases/download/v0.2.4/PageCase_0.2.4_win64_Setup.exe",
   "silentInstallArgs": "/SILENT /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS",
-  "releaseNotes": ""
+  "releaseNotes": "新增了指定页码的排除功能；"
 }
