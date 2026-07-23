@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(PageCase VERSION 0.2.3 LANGUAGES CXX)
+project(PageCase VERSION 0.2.4 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -114,6 +114,7 @@ qt_add_qml_module(PageCase
         qml/components/IconDeleteButton.qml
         qml/components/StatusToast.qml
         qml/components/SwitchToggle.qml
+        qml/components/StyledCheckBox.qml
         qml/components/StyledButton.qml
         qml/components/MenuOption.qml
         qml/components/ThemeToggleButton.qml

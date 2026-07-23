@@ -16,6 +16,7 @@
 
 #include "filepicker.h"
 
+#include <QDir>
 #include <QFileInfo>
 
 #include <QFutureWatcher>
@@ -27,7 +28,20 @@
 
 #include <functional>
 
+namespace {
 
+QString normalizeLocalPath(const QString &path)
+{
+    if (path.isEmpty())
+        return {};
+    QString s = path;
+    if (s.startsWith(QStringLiteral("file:"), Qt::CaseInsensitive))
+        s = QUrl(s).toLocalFile();
+    s = QDir::cleanPath(QDir::fromNativeSeparators(s));
+    return QFileInfo(s).absoluteFilePath();
+}
+
+} // namespace
 
 AppController::AppController(PreviewImageProvider *imageProvider, AppSettings *settings,
                              FilePicker *filePicker, QObject *parent)
@@ -260,7 +274,7 @@ void AppController::removeFileAt(int index)
 {
     const QString path = filePathAt(index);
     m_files.removeAt(index);
-    if (!path.isEmpty() && m_pageRanges.remove(path) > 0)
+    if (!path.isEmpty() && m_pageRanges.remove(normalizeLocalPath(path)) > 0)
         emit pageRangesChanged();
 }
 
@@ -283,23 +297,32 @@ bool AppController::anyPageRangeSet() const
 
 void AppController::setPageRange(const QString &path, const QString &text)
 {
-    if (path.isEmpty())
+    const QString key = normalizeLocalPath(path);
+    if (key.isEmpty())
         return;
 
     const QString trimmed = text.trimmed();
-    if (m_pageRanges.value(path) == trimmed)
+    if (m_pageRanges.value(key) == trimmed)
         return;
 
     if (trimmed.isEmpty())
-        m_pageRanges.remove(path);
+        m_pageRanges.remove(key);
     else
-        m_pageRanges.insert(path, trimmed);
+        m_pageRanges.insert(key, trimmed);
     emit pageRangesChanged();
+}
+
+void AppController::commitPreviewPageRange(const QString &text)
+{
+    QString path = normalizeLocalPath(m_preview.currentFile());
+    if (path.isEmpty() && m_files.count() > 0)
+        path = normalizeLocalPath(m_files.paths().first());
+    setPageRange(path, text);
 }
 
 QString AppController::pageRange(const QString &path) const
 {
-    return m_pageRanges.value(path);
+    return m_pageRanges.value(normalizeLocalPath(path));
 }
 
 void AppController::pruneStalePageRanges()
@@ -452,13 +475,52 @@ QString resolveInput(PdfEngine &engine, const QString &path, QTemporaryDir *temp
     return {};
 }
 
+QString resolveQpdfPageRange(PdfEngine &engine, const QString &pdfPath,
+                             const QString &normalizedRange, bool excludePages, QString *error)
+{
+    if (!excludePages)
+        return normalizedRange;
+
+    if (normalizedRange.isEmpty()) {
+        if (error)
+            *error = QStringLiteral("Specify pages to exclude");
+        return {};
+    }
+
+    const int totalPages = engine.pageCount(pdfPath);
+    if (totalPages <= 0) {
+        if (error)
+            *error = QStringLiteral("Cannot read page count");
+        return {};
+    }
+
+    const QString range = PdfEngine::pageRangeForQpdf(normalizedRange, true, totalPages);
+    if (range.isEmpty()) {
+        if (error)
+            *error = QStringLiteral("No pages left after exclusion");
+        return {};
+    }
+    return range;
+}
+
+QString previewActionInput(const QStringList &paths, const QString &previewFile)
+{
+    if (!previewFile.isEmpty() && paths.contains(previewFile))
+        return previewFile;
+    return paths.isEmpty() ? QString() : paths.first();
+}
+
 } // namespace
 
 void AppController::runCurrentAction(int optionValue, const QString &extraText,
-                                     const QString &extraColor)
+                                     const QString &extraColor, bool excludePages,
+                                     const QString &pageRangeText)
 {
     if (m_busy)
         return;
+
+    if (m_currentTab <= 2)
+        commitPreviewPageRange(pageRangeText);
 
     const QStringList paths = m_files.paths();
     if (paths.isEmpty()) {
@@ -476,6 +538,10 @@ void AppController::runCurrentAction(int optionValue, const QString &extraText,
         ? m_settings->trKey(QStringLiteral("pageRangeInvalid"))
         : QStringLiteral("Invalid page range");
 
+    const QString excludeNeedRangeMsg = m_settings
+        ? m_settings->trKey(QStringLiteral("excludePagesNeedRange"))
+        : QStringLiteral("Specify pages to exclude");
+
     const QString needPdfMsg = m_settings
         ? m_settings->trKey(QStringLiteral("needPdf"))
         : QStringLiteral("This file type is not supported for this operation");
@@ -487,14 +553,22 @@ void AppController::runCurrentAction(int optionValue, const QString &extraText,
     switch (m_currentTab) {
 
     case 0: {
+        const QString splitInput = previewActionInput(paths, m_preview.currentFile());
+
         bool rangeOk = true;
-        const QString range = PdfEngine::normalizePageRange(pageRange(paths.first()), &rangeOk);
+        QString raw = pageRange(splitInput);
+        if (raw.trimmed().isEmpty())
+            raw = pageRangeText.trimmed();
+        const QString normalized = PdfEngine::normalizePageRange(raw, &rangeOk);
         if (!rangeOk) {
             fail(invalidRangeMsg);
             return;
         }
-        const QString input = paths.first();
-        const QString defaultBase = QFileInfo(input).completeBaseName();
+        if (excludePages && normalized.isEmpty()) {
+            fail(excludeNeedRangeMsg);
+            return;
+        }
+        const QString defaultBase = QFileInfo(splitInput).completeBaseName();
         const QString outDir = browseOutputDir(defaultBase, QStringLiteral("split"));
         if (outDir.isEmpty())
             return;
@@ -505,43 +579,74 @@ void AppController::runCurrentAction(int optionValue, const QString &extraText,
         const int splitNumStyle = m_filePicker ? m_filePicker->splitNumberStyle() : 0;
         const QString splitLang = m_settings ? m_settings->language() : QStringLiteral("zh_CN");
         outputPath = outDir;
-        task = [this, input, outDir, range, splitBase, splitSep, splitNumStyle, splitLang,
-                needPdfMsg]() {
+        task = [this, splitInput, outDir, normalized, excludePages, splitBase, splitSep,
+                splitNumStyle, splitLang, needPdfMsg]() {
             QTemporaryDir tempDir;
             if (!tempDir.isValid())
                 return QStringLiteral("Cannot create temp directory");
             int serial = 0;
             QString resolveError;
             const QString pdf =
-                resolveInput(m_engine, input, &tempDir, &serial, needPdfMsg, &resolveError);
+                resolveInput(m_engine, splitInput, &tempDir, &serial, needPdfMsg, &resolveError);
             if (pdf.isEmpty())
                 return resolveError;
-            return m_engine.splitPdf(pdf, outDir, true, range, splitBase, splitSep,
-                                     splitNumStyle, splitLang);
+
+            QString rangeError;
+            const QString range =
+                resolveQpdfPageRange(m_engine, pdf, normalized, excludePages, &rangeError);
+            if (!rangeError.isEmpty())
+                return rangeError;
+
+            return m_engine.splitPdf(pdf, outDir, true, range, splitBase, splitSep, splitNumStyle,
+                                     splitLang);
         };
         break;
     }
 
     case 1: {
-        if (paths.size() < 2) {
-            fail(QStringLiteral("Need at least 2 files"));
+        if (paths.isEmpty()) {
+            fail(QStringLiteral("No files"));
             return;
         }
+
+        QString sharedExcludeRange;
+        if (excludePages) {
+            bool sharedOk = true;
+            QString rawShared = pageRange(m_preview.currentFile());
+            if (rawShared.trimmed().isEmpty())
+                rawShared = pageRangeText.trimmed();
+            const QString previewRange = PdfEngine::normalizePageRange(rawShared, &sharedOk);
+            if (!sharedOk) {
+                fail(invalidRangeMsg);
+                return;
+            }
+            sharedExcludeRange = previewRange;
+        }
+
         QStringList ranges;
         ranges.reserve(paths.size());
         for (const QString &path : paths) {
             bool rangeOk = true;
-            ranges.append(PdfEngine::normalizePageRange(pageRange(path), &rangeOk));
+            QString raw = pageRange(path);
+            if (raw.trimmed().isEmpty() && excludePages && !sharedExcludeRange.isEmpty())
+                raw = sharedExcludeRange;
+
+            const QString normalized = PdfEngine::normalizePageRange(raw, &rangeOk);
             if (!rangeOk) {
                 fail(invalidRangeMsg);
                 return;
             }
+            if (excludePages && normalized.isEmpty()) {
+                fail(excludeNeedRangeMsg);
+                return;
+            }
+            ranges.append(normalized);
         }
         const QString out = browseOutputFile(QStringLiteral("merged.pdf"));
         if (out.isEmpty())
             return;
         outputPath = out;
-        task = [this, paths, out, ranges, needPdfMsg]() -> QString {
+        task = [this, paths, out, ranges, excludePages, needPdfMsg]() -> QString {
             QTemporaryDir tempDir;
             if (!tempDir.isValid())
                 return QStringLiteral("Cannot create temp directory");
@@ -556,25 +661,34 @@ void AppController::runCurrentAction(int optionValue, const QString &extraText,
                     return resolveError;
                 resolved.append(pdf);
             }
-            return m_engine.mergePdfs(resolved, out, ranges);
+            return m_engine.mergePdfs(resolved, out, ranges, excludePages);
         };
         break;
     }
 
     case 2: {
+        const QString rotateInput = previewActionInput(paths, m_preview.currentFile());
+
         bool rangeOk = true;
-        const QString range = PdfEngine::normalizePageRange(pageRange(paths.first()), &rangeOk);
+        QString raw = pageRange(rotateInput);
+        if (raw.trimmed().isEmpty())
+            raw = pageRangeText.trimmed();
+        const QString normalized = PdfEngine::normalizePageRange(raw, &rangeOk);
         if (!rangeOk) {
             fail(invalidRangeMsg);
             return;
         }
+        if (excludePages && normalized.isEmpty()) {
+            fail(excludeNeedRangeMsg);
+            return;
+        }
         const QString out = browseOutputFile(
-            QFileInfo(paths.first()).completeBaseName() + QStringLiteral("_rotated.pdf"));
+            QFileInfo(rotateInput).completeBaseName() + QStringLiteral("_rotated.pdf"));
         if (out.isEmpty())
             return;
-        const QString input = paths.first();
+        const QString input = rotateInput;
         outputPath = out;
-        task = [this, input, out, optionValue, range, needPdfMsg]() {
+        task = [this, input, out, optionValue, normalized, excludePages, needPdfMsg]() {
             QTemporaryDir tempDir;
             if (!tempDir.isValid())
                 return QStringLiteral("Cannot create temp directory");
@@ -584,6 +698,13 @@ void AppController::runCurrentAction(int optionValue, const QString &extraText,
                 resolveInput(m_engine, input, &tempDir, &serial, needPdfMsg, &resolveError);
             if (pdf.isEmpty())
                 return resolveError;
+
+            QString rangeError;
+            const QString range =
+                resolveQpdfPageRange(m_engine, pdf, normalized, excludePages, &rangeError);
+            if (!rangeError.isEmpty())
+                return rangeError;
+
             return m_engine.rotatePdf(pdf, out, optionValue, range);
         };
         break;
@@ -650,11 +771,12 @@ void AppController::runCurrentAction(int optionValue, const QString &extraText,
     }
 
     case 4: {
+        const QString compressInput = previewActionInput(paths, m_preview.currentFile());
         const QString out = browseOutputFile(
-            QFileInfo(paths.first()).completeBaseName() + QStringLiteral("_compressed.pdf"));
+            QFileInfo(compressInput).completeBaseName() + QStringLiteral("_compressed.pdf"));
         if (out.isEmpty())
             return;
-        const QString input = paths.first();
+        const QString input = compressInput;
         outputPath = out;
         task = [this, input, out, optionValue, needPdfMsg]() {
             QTemporaryDir tempDir;

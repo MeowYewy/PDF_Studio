@@ -13,6 +13,7 @@ Item {
     property bool showCompress: false
     property bool showWatermark: false
     property bool showPageRange: false
+    property bool showPageExclude: false
     property bool enableReorder: false
 
     ShadowCard {
@@ -123,6 +124,7 @@ Item {
                 showCompress: pageBase.showCompress
                 showWatermark: pageBase.showWatermark
                 showPageRange: pageBase.showPageRange
+                showPageExclude: pageBase.showPageExclude
             }
         }
     }

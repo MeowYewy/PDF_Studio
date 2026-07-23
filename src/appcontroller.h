@@ -63,12 +63,14 @@ public:
     Q_INVOKABLE void ensurePreviewPagesLoaded(int startPage, int endPage);
     Q_INVOKABLE QString filePathAt(int index) const;
     Q_INVOKABLE void setPageRange(const QString &path, const QString &text);
+    Q_INVOKABLE void commitPreviewPageRange(const QString &text);
     Q_INVOKABLE QString pageRange(const QString &path) const;
     Q_INVOKABLE QString browseOutputFile(const QString &suggested, const QString &filter = {});
     Q_INVOKABLE QString browseOutputDir(const QString &suggestedBase = {},
                                         const QString &exportKind = {});
     Q_INVOKABLE void runCurrentAction(int optionValue = 90, const QString &extraText = {},
-                                      const QString &extraColor = {});
+                                      const QString &extraColor = {}, bool excludePages = false,
+                                      const QString &pageRangeText = {});
     Q_INVOKABLE QVariantList watermarkLayoutItems(const QString &text, int count,
                                                   qreal pageWidth, qreal pageHeight) const;
 

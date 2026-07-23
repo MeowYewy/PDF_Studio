@@ -2,6 +2,7 @@
 
 #include <QColor>
 #include <QObject>
+#include <QSet>
 #include <QStringList>
 
 class QTemporaryDir;
@@ -14,7 +15,8 @@ public:
     explicit PdfEngine(QObject *parent = nullptr);
 
     Q_INVOKABLE QString mergePdfs(const QStringList &inputs, const QString &outputPath,
-                                  const QStringList &pageRanges = {});
+                                  const QStringList &pageRanges = {},
+                                  bool excludePages = false);
     Q_INVOKABLE QString splitPdf(const QString &input, const QString &outputDir, bool byPage,
                                  const QString &pageRange = {},
                                  const QString &baseNameOverride = {},
@@ -32,6 +34,8 @@ public:
     static QString normalizePageRange(const QString &raw, bool *ok = nullptr);
     static QList<int> expandPageRange(const QString &normalizedRange);
     static QString formatSplitPageIndex(int index, int style, const QString &language);
+    // Builds a qpdf page range; exclude=true drops listed pages from 1..pageCount.
+    static QString pageRangeForQpdf(const QString &normalizedRange, bool exclude, int pageCount);
     Q_INVOKABLE QString compressPdf(const QString &input, const QString &outputPath, int level);
     Q_INVOKABLE QString watermarkPdf(const QString &input, const QString &outputPath, const QString &text,
                                      int count = 1, const QColor &color = QColor(90, 90, 90));

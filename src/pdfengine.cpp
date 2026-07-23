@@ -553,6 +553,10 @@ QString PdfEngine::normalizePageRange(const QString &raw, bool *ok)
     text.replace(QChar(0x2014), QLatin1Char('-')); // —
     text.replace(QChar(0xFF5E), QLatin1Char('-')); // ～
     text.replace(QLatin1Char('~'), QLatin1Char('-'));
+    text.replace(QLatin1Char(';'), QLatin1Char(','));
+
+    while (text.endsWith(QLatin1Char(',')))
+        text.chop(1);
 
     if (text.isEmpty())
         return {};
@@ -592,6 +596,53 @@ QList<int> PdfEngine::expandPageRange(const QString &normalizedRange)
     }
     std::sort(pages.begin(), pages.end());
     return pages;
+}
+
+QString compressPageList(const QList<int> &pages)
+{
+    if (pages.isEmpty())
+        return {};
+
+    QStringList groups;
+    int start = pages.first();
+    int prev = start;
+    for (int i = 1; i < pages.size(); ++i) {
+        if (pages.at(i) == prev + 1) {
+            prev = pages.at(i);
+            continue;
+        }
+        groups.append(start == prev ? QString::number(start)
+                                    : QStringLiteral("%1-%2").arg(start).arg(prev));
+        start = prev = pages.at(i);
+    }
+    groups.append(start == prev ? QString::number(start)
+                                : QStringLiteral("%1-%2").arg(start).arg(prev));
+    return groups.join(QLatin1Char(','));
+}
+
+QString PdfEngine::pageRangeForQpdf(const QString &normalizedRange, bool exclude, int pageCount)
+{
+    if (normalizedRange.isEmpty())
+        return {};
+
+    if (!exclude)
+        return normalizedRange;
+
+    if (pageCount <= 0)
+        return {};
+
+    QSet<int> excluded;
+    for (int page : expandPageRange(normalizedRange))
+        excluded.insert(page);
+
+    QList<int> included;
+    included.reserve(pageCount);
+    for (int page = 1; page <= pageCount; ++page) {
+        if (!excluded.contains(page))
+            included.append(page);
+    }
+
+    return compressPageList(included);
 }
 
 QString PdfEngine::resolveToPdfPath(const QString &input, QTemporaryDir *tempDir, int *tempSerial,
@@ -634,10 +685,10 @@ QString PdfEngine::resolveToPdfPath(const QString &input, QTemporaryDir *tempDir
 }
 
 QString PdfEngine::mergePdfs(const QStringList &inputs, const QString &outputPath,
-                             const QStringList &pageRanges)
+                             const QStringList &pageRanges, bool excludePages)
 {
-    if (inputs.size() < 2)
-        return QStringLiteral("Need at least 2 PDF files");
+    if (inputs.isEmpty())
+        return QStringLiteral("No PDF files to merge");
 
     if (QFile::exists(outputPath) && !QFile::remove(outputPath))
         return QStringLiteral("Cannot overwrite output");
@@ -645,8 +696,19 @@ QString PdfEngine::mergePdfs(const QStringList &inputs, const QString &outputPat
     QStringList args;
     args << QStringLiteral("--empty") << QStringLiteral("--pages");
     for (int i = 0; i < inputs.size(); ++i) {
+        const QString rawRange = i < pageRanges.size() ? pageRanges.at(i) : QString();
+        const int totalPages = pageCount(inputs.at(i));
+        const QString range = pageRangeForQpdf(rawRange, excludePages, totalPages);
+        if (excludePages) {
+            if (rawRange.isEmpty())
+                return QStringLiteral("Specify pages to exclude");
+            if (totalPages <= 0)
+                return QStringLiteral("Cannot read page count");
+            if (range.isEmpty())
+                return QStringLiteral("No pages left after exclusion");
+        }
+
         args << inputs.at(i);
-        const QString range = i < pageRanges.size() ? pageRanges.at(i) : QString();
         args << (range.isEmpty() ? QStringLiteral("1-z") : range);
     }
     args << QStringLiteral("--") << outputPath;
@@ -709,10 +771,15 @@ QString PdfEngine::splitPdf(const QString &input, const QString &outputDir, bool
 QString PdfEngine::rotatePdf(const QString &input, const QString &outputPath, int degrees,
                              const QString &pageRange)
 {
+    if (QFile::exists(outputPath) && !QFile::remove(outputPath))
+        return QStringLiteral("Cannot overwrite output");
+
     const QString range = pageRange.isEmpty() ? QStringLiteral("1-z") : pageRange;
     QStringList args;
-    args << input << outputPath
-         << QStringLiteral("--rotate=+%1:%2").arg(degrees).arg(range);
+    args << input
+         << QStringLiteral("--rotate=+%1:%2").arg(degrees).arg(range)
+         << QStringLiteral("--")
+         << outputPath;
 
     QString err;
     if (!runQpdf(args, &err))
@@ -982,21 +1049,35 @@ QString PdfEngine::compressPdf(const QString &input, const QString &outputPath, 
     if (QFile::exists(outputPath) && !QFile::remove(outputPath))
         return QStringLiteral("Cannot overwrite output");
 
+    const int clampedLevel = qBound(0, level, 2);
+    const qint64 inputSize = QFileInfo(input).size();
+
     QStringList args;
-    args << input;
+    args << input
+         << QStringLiteral("--stream-data=compress")
+         << QStringLiteral("--compress-streams=y")
+         << QStringLiteral("--object-streams=generate")
+         << QStringLiteral("--recompress-flate")
+         << QStringLiteral("--remove-unreferenced-resources=yes");
 
-    if (level >= 1)
-        args << QStringLiteral("--object-streams=generate");
-    if (level >= 2)
-        args << QStringLiteral("--recompress-flate");
+    if (clampedLevel >= 1) {
+        args << QStringLiteral("--optimize-images")
+             << QStringLiteral("--jpeg-quality=%1").arg(clampedLevel >= 2 ? 50 : 78);
+        if (clampedLevel >= 2)
+            args << QStringLiteral("--oi-min-area=10000");
+    }
 
-    args << QStringLiteral("--stream-data=compress")
-         << QStringLiteral("--")
-         << outputPath;
+    args << QStringLiteral("--") << outputPath;
 
     QString err;
     if (!runQpdf(args, &err))
         return QStringLiteral("Compress failed: %1").arg(err);
+
+    const qint64 outputSize = QFileInfo(outputPath).size();
+    if (inputSize > 0 && outputSize >= inputSize && clampedLevel == 0) {
+        if (QFile::remove(outputPath))
+            return copyPdfToOutput(input, outputPath);
+    }
     return {};
 }
 

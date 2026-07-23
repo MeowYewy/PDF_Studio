@@ -1,6 +1,6 @@
 {
-  "version": "0.2.3",
-  "downloadUrl": "https://github.com/MeowYewy/PageCase/releases/download/v0.2.3/PageCase_0.2.3_win64_Setup.exe",
+  "version": "0.2.4",
+  "downloadUrl": "https://github.com/MeowYewy/PageCase/releases/download/v0.2.4/PageCase_0.2.4_win64_Setup.exe",
   "silentInstallArgs": "/SILENT /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS",
-  "releaseNotes": "优化了界面的表现效果；优化了更新检测的逻辑；修复了部分文件类型不支持的问题；修复了导出文件时图片格式的文件比例异常的问题；修复了导出文件时图片格式的文件清晰度异常的问题；修复了导出文件时导出的文件数量错误的问题；修复了添加或导出文件时路径捕获错误的问题；"
+  "releaseNotes": ""
 }

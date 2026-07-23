@@ -15,6 +15,8 @@ RowLayout {
     property bool showCompress: false
     property bool showWatermark: false
     property bool showPageRange: false
+    property bool showPageExclude: false
+    property bool excludePages: false
     property int optionValue: 90
     property int watermarkCount: 1
     property string watermarkText: ""
@@ -68,6 +70,7 @@ RowLayout {
             visible: actionBar.showCompress
             Layout.preferredWidth: actionBar.controlWidth
             onLevelValueChanged: actionBar.optionValue = compressPicker.levelValue
+            Component.onCompleted: actionBar.optionValue = compressPicker.levelValue
         }
 
         ConvertComboBox {
@@ -76,6 +79,15 @@ RowLayout {
             Layout.preferredWidth: actionBar.controlWidth
             onFormatValueChanged: actionBar.optionValue = formatPicker.formatValue
             Component.onCompleted: actionBar.optionValue = formatPicker.formatValue
+        }
+
+        StyledCheckBox {
+            id: pageExcludeOption
+            visible: actionBar.showPageExclude
+            enabled: !AppController.busy
+            text: Theme.tr("excludePages")
+            checked: actionBar.excludePages
+            onToggled: function(value) { actionBar.excludePages = value }
         }
 
         TextField {
@@ -155,11 +167,13 @@ RowLayout {
             enabled: AppController.fileCount > 0 && !AppController.busy
                      && (!actionBar.showWatermark || actionBar.watermarkText.trim().length > 0)
             onClicked: {
+                const rangeText = actionBar.showPageRange ? pageRangeField.text : ""
                 if (actionBar.showWatermark)
                     AppController.runCurrentAction(actionBar.watermarkCount, actionBar.watermarkText,
-                                                  actionBar.watermarkColor)
+                                                  actionBar.watermarkColor, false, rangeText)
                 else
-                    AppController.runCurrentAction(actionBar.optionValue, "")
+                    AppController.runCurrentAction(actionBar.optionValue, "", "",
+                                                 actionBar.excludePages, rangeText)
             }
         }
     }

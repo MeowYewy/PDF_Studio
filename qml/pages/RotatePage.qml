@@ -5,4 +5,5 @@ PageBase {
     desc: Theme.tr("rotateDesc")
     showRotate: true
     showPageRange: true
+    showPageExclude: true
 }
